@@ -25,7 +25,7 @@ cd familia-financas
 docker compose up -d --build
 ```
 
-Acesse **http://localhost:8080** ou `http://IP-DO-SERVIDOR:8080` na rede local.
+Acesse **http://localhost:80** ou `http://IP-DO-SERVIDOR:80` na rede local.
 
 Para acompanhar os logs:
 
