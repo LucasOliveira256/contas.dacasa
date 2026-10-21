@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12352d">
+  <title>Entrar · Casa em Ordem</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="auth-body">
+  <main class="auth-wrap">
+    <div class="auth-brand"><span class="brand-mark">R$</span><div><strong>Casa em Ordem</strong><small>Finanças da família</small></div></div>
+    <section class="panel auth-panel">
+      <p class="eyebrow">ÁREA PROTEGIDA</p>
+      <h1>Entrar</h1>
+      <p class="muted">Informe seu usuário e sua senha para continuar.</p>
+      {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
+      {% if request.query_params.get('ok') == 'logout' %}<div class="notice success">Você saiu da aplicação.</div>{% endif %}
+      <form method="post" action="/login" class="form-stack">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="next_url" value="{{ next_url }}">
+        <label class="field">Usuário<input name="username" autocomplete="username" required autofocus maxlength="32"></label>
+        <label class="field">Senha<input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="button auth-submit" type="submit">Entrar</button>
+      </form>
+      <p class="auth-footnote">A sessão expira após 8 horas de inatividade ou validade.</p>
+    </section>
+  </main>
+</body>
+</html>

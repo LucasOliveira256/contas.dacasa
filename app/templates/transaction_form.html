@@ -2,7 +2,7 @@
 {% block title %}{{ title }} · Casa em ordem{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">MOVIMENTAÇÃO</p><h1>{{ title }}</h1><p class="muted">Valores em reais; parcelamento gera uma linha por fatura de crédito.</p></div><a class="button button-light" href="/transacoes">Voltar</a></section>
-<form class="panel form-panel" method="post" action="{{ form_action }}">
+<form class="panel form-panel" method="post" action="{{ form_action }}"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <div class="form-grid">
     <label class="field field-wide">Descrição<input name="description" required maxlength="240" value="{{ transaction.description if transaction else '' }}" placeholder="Ex.: supermercado, material escolar"></label>
     <label class="field">Valor total (R$)<input name="amount" required inputmode="decimal" placeholder="0,00" value="{{ transaction.amount_cents|brl if transaction else '' }}"></label>

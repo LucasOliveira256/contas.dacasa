@@ -16,7 +16,7 @@ def base_context(request: Request, db: Session, **extra):
     accounts = list(db.scalars(select(Account).where(Account.active.is_(True)).order_by(Account.name)).all())
     cards = list(db.scalars(select(CreditCard).where(CreditCard.active.is_(True)).order_by(CreditCard.name)).all())
     category_options = [{"id": c.id, "label": category_name(db, c.id), "name": c.name} for c in categories]
-    context = {"request": request, "today": date.today(), "erro": request.query_params.get("erro"), "ok": request.query_params.get("ok"), "people": people,
+    context = {"request": request, "today": date.today(), "current_user": getattr(request.state, "current_user", None), "csrf_token": request.session.get("csrf_token", ""), "erro": request.query_params.get("erro"), "ok": request.query_params.get("ok"), "people": people,
                "categories": categories, "category_options": category_options,
                "accounts": accounts, "cards": cards, "active_nav": "", **extra}
     return context
