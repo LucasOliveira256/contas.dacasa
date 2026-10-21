@@ -20,8 +20,8 @@ Python 3.12 · FastAPI · SQLAlchemy · SQLite · Jinja2 · HTMX adaptado localm
 Requer Docker Engine e Docker Compose.
 
 ```bash
-git clone <URL-DO-REPOSITORIO>
-cd familia-financas
+git clone https://github.com/LucasOliveira256/contas.dacasa
+cd contas.dacasa
 docker compose up -d --build
 ```
 
