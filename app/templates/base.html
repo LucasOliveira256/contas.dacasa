@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12352d">
+  <title>{% block title %}Finanças da Família{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script defer src="/static/js/htmx-lite.js"></script>
+  <script defer src="/static/js/local-charts.js"></script>
+  <script defer src="/static/js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Página inicial"><span class="brand-mark">R$</span><span>Casa em ordem<small>Finanças da família</small></span></a>
+    <span class="top-date">{{ today.strftime('%d/%m/%Y') }}</span>
+  </header>
+  <nav class="nav-grid" aria-label="Navegação principal">
+    <a class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}" href="/">Visão geral</a>
+    <a class="nav-item {% if active_nav == 'transacoes' %}active{% endif %}" href="/transacoes">Gastos</a>
+    <a class="nav-item {% if active_nav == 'fixos' %}active{% endif %}" href="/transacoes/fixos">Gastos fixos</a>
+    <a class="nav-item {% if active_nav == 'planejados' %}active{% endif %}" href="/planejados">Planejados</a>
+    <a class="nav-item {% if active_nav == 'receitas' %}active{% endif %}" href="/receitas">Receitas</a>
+    <a class="nav-item {% if active_nav == 'cartoes' %}active{% endif %}" href="/cartoes">Faturas</a>
+    <a class="nav-item {% if active_nav == 'poupanca' %}active{% endif %}" href="/poupanca">Poupança</a>
+    <a class="nav-item {% if active_nav == 'orcamento' %}active{% endif %}" href="/orcamento">Orçamento</a>
+    <a class="nav-item {% if active_nav == 'projecao' %}active{% endif %}" href="/projecao">Projeção</a>
+    <a class="nav-item {% if active_nav == 'historico' %}active{% endif %}" href="/historico">Histórico</a>
+    <a class="nav-item {% if active_nav == 'relatorios' %}active{% endif %}" href="/relatorios">Relatórios</a>
+    <a class="nav-item {% if active_nav == 'cadastros' %}active{% endif %}" href="/cadastros">Cadastros</a>
+  </nav>
+  <main class="container">
+    {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
+    {% if ok %}<div class="notice success">Alterações salvas.</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="footer">Dados guardados localmente neste dispositivo/rede · Valores em reais (BRL)</footer>
+</body>
+</html>

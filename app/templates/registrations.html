@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Cadastros · Casa em ordem{% endblock %}
+{% block content %}
+<section class="page-head"><div><p class="eyebrow">CONFIGURAÇÃO DA CASA</p><h1>Cadastros</h1><p class="muted">Gerencie pessoas, categorias, contas e cartões usados no dia a dia.</p></div></section>
+<div class="registration-grid">
+<section class="panel"><h2>Pessoas</h2>
+  <form method="post" action="/cadastros/pessoas" class="inline-form"><input name="name" required maxlength="80" placeholder="Nome da pessoa"><button class="button button-small">Adicionar</button></form>
+  <div class="simple-list">{% for p in all_people %}<div class="registration-row people-row">
+    <form method="post" action="/cadastros/pessoas/{{ p.id }}/editar" class="registration-edit-form">
+      <input name="name" aria-label="Nome de {{ p.name }}" value="{{ p.name }}" required maxlength="80">
+      <select name="active" aria-label="Situação de {{ p.name }}"><option value="sim" {% if p.active %}selected{% endif %}>Ativa</option><option value="nao" {% if not p.active %}selected{% endif %}>Inativa</option></select>
+      <button class="text-button" type="submit">Salvar</button>
+    </form>
+    <form method="post" action="/cadastros/pessoas/{{ p.id }}/excluir" onsubmit="return confirm('Excluir/inativar {{ p.name }}? Se houver histórico, a pessoa será preservada como inativa.')"><button class="text-button danger-text" type="submit">Excluir</button></form>
+  </div>{% endfor %}</div>
+  <p class="muted compact-copy">Se a pessoa tiver lançamentos relacionados, será inativada para preservar o histórico.</p>
+</section>
+<section class="panel"><h2>Categorias e subcategorias</h2>
+  <form method="post" action="/cadastros/categorias" class="form-stack"><label class="field">Nome<input name="name" required maxlength="100" placeholder="Ex.: Material escolar"></label>
+    <label class="field">Categoria principal<select name="parent_id"><option value="">Criar categoria principal</option>{% for c in all_categories if not c.parent_id and c.active %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+    <button class="button button-small" type="submit">Adicionar categoria</button>
+  </form>
+  <div class="simple-list">{% for c in all_categories if c.active %}<div class="registration-row category-row"><span>{% if c.parent %}↳ {{ c.parent.name }} / {% endif %}{{ c.name }}</span>
+    <form method="post" action="/cadastros/categorias/{{ c.id }}/excluir" onsubmit="return confirm('Excluir a categoria {{ c.name }}?')"><button class="text-button danger-text" type="submit">Excluir</button></form>
+  </div>{% endfor %}</div>
+  <details class="inactive-list"><summary>Mostrar categorias excluídas/inativas</summary><div class="simple-list">{% for c in all_categories if not c.active %}<div class="registration-row category-row"><span>{% if c.parent %}↳ {{ c.parent.name }} / {% endif %}{{ c.name }}<small>Inativa · histórico preservado</small></span></div>{% else %}<p class="muted">Nenhuma categoria inativa.</p>{% endfor %}</div></details>
+  <p class="muted compact-copy">Lazer fica sem subcategorias: use o campo de descrição do gasto para detalhar. Categorias excluídas saem dos novos lançamentos, preservando relatórios antigos.</p>
+</section>
+<section class="panel"><h2>Contas e carteiras</h2>
+  <form method="post" action="/cadastros/contas" class="form-stack"><label class="field">Nome<input name="name" required placeholder="Ex.: Conta principal"></label>
+    <label class="field">Tipo<select name="kind"><option value="corrente">Conta corrente</option><option value="poupanca">Poupança</option><option value="dinheiro">Dinheiro/carteira</option><option value="outro">Outra</option></select></label>
+    <label class="field">Responsável<select name="person_id"><option value="">Família/compartilhada</option>{% for p in people %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
+    <label class="field">Saldo inicial (R$)<input name="initial_balance" value="0,00" inputmode="decimal"></label><button class="button button-small" type="submit">Adicionar conta</button>
+  </form>
+  <div class="simple-list">{% for a in all_accounts %}<div><span>{{ a.name }}<small>{{ a.kind }}{% if a.person %} · {{ a.person.name }}{% endif %}</small></span><b>{{ a.initial_balance_cents|brl }}</b></div>{% else %}<p class="muted">Nenhuma conta cadastrada.</p>{% endfor %}</div>
+</section>
+<section class="panel"><h2>Cartões e vales</h2>
+  <form method="post" action="/cadastros/cartoes" class="form-stack" id="card-registration-form">
+    <label class="field">Nome do cartão<input name="name" required placeholder="Ex.: Visa principal"></label>
+    <label class="field">Titular<select name="owner_id" required>{% for p in people if p.name != 'Família' and p.active %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
+    <label class="field">Tipo<select name="kind" id="registration-card-kind"><option value="credito">Cartão de crédito</option><option value="debito">Cartão de débito</option><option value="vale_alimentacao">Vale Alimentação (débito)</option></select></label>
+    <div class="form-grid" id="card-cycle-fields"><label class="field">Fecha dia<input type="number" name="closing_day" min="1" max="31" value="10"></label><label class="field">Vence dia<input type="number" name="due_day" min="1" max="31" value="17"></label></div>
+    <label class="field">Limite / valor de referência (R$)<input name="limit" value="0,00" inputmode="decimal"></label>
+    <label class="field">Conta usada para pagar a fatura (opcional)<select name="payment_account_id"><option value="">Não definida</option>{% for a in all_accounts if a.active %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></label>
+    <button class="button button-small" type="submit">Adicionar cartão</button>
+  </form>
+  <div class="simple-list">{% for c in all_cards %}<div><span>{{ c.name }}<small>{{ c.owner.name }} · {% if c.kind == 'credito' %}Crédito · fecha dia {{ c.closing_day }} · vence dia {{ c.due_day }}{% elif c.kind == 'vale_alimentacao' %}Vale Alimentação (débito) · sem fatura{% else %}Débito · sem fatura{% endif %}</small></span><b>{% if c.kind == 'credito' %}Limite {% else %}Referência {% endif %}{{ c.limit_cents|brl }}</b></div>{% else %}<p class="muted">Nenhum cartão cadastrado.</p>{% endfor %}</div>
+  <p class="muted compact-copy">Débito e Vale Alimentação não pedem fechamento ou vencimento; as compras entram no fluxo de caixa na data da compra.</p>
+</section>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const kind = document.getElementById('registration-card-kind');
+  const cycle = document.getElementById('card-cycle-fields');
+  function toggleCardCycle() {
+    if (!kind || !cycle) return;
+    const credit = kind.value === 'credito';
+    cycle.hidden = !credit;
+    cycle.querySelectorAll('input').forEach(input => { input.disabled = !credit; input.required = credit; });
+  }
+  if (kind) { kind.addEventListener('change', toggleCardCycle); toggleCardCycle(); }
+});
+</script>
+{% endblock %}

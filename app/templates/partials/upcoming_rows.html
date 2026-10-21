@@ -1,0 +1,3 @@
+{% if rows %}
+<div class="upcoming-list">{% for item in rows %}<div class="upcoming-item"><div class="upcoming-date"><b>{{ item.cashflow_date.strftime('%d') }}</b><small>{{ item.cashflow_date.strftime('%m/%Y') }}</small></div><div class="upcoming-detail"><b>{{ item.description }}</b><small>{{ item.person.name }} · {% if item.card %}{{ item.card.name }}{% elif item.account %}{{ item.account.name }}{% else %}Sem conta/cartão{% endif %}</small><small>{{ item.category.name }}</small></div><div class="upcoming-value"><b>{{ item.amount_cents|brl }}</b><span class="status status-{{ item.status }}">{{ item.status }}</span></div></div>{% endfor %}</div>
+{% else %}<div class="empty-state">Nenhum vencimento previsto para os próximos 45 dias.</div>{% endif %}

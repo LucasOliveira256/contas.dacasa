@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Relatórios e backup · Casa em ordem{% endblock %}
+{% block content %}
+<section class="page-head"><div><p class="eyebrow">SEUS DADOS</p><h1>Relatórios e backup</h1><p class="muted">Exporte o período em CSV ou baixe uma cópia consistente do banco SQLite.</p></div></section>
+<section class="panel form-panel"><h2>Exportar CSV por período</h2><form method="get" action="/exportar.csv" class="form-grid"><label class="field">Data inicial<input type="date" name="inicio" value="{{ default_start }}" required></label><label class="field">Data final<input type="date" name="fim" value="{{ default_end }}" required></label><div class="form-actions"><button class="button" type="submit">Exportar CSV</button></div></form><p class="muted helper-text">O CSV inclui despesas pela data da compra e receitas/descontos pela data do lançamento, com valor em centavos e reais, status, conta, cartão e parcela.</p></section>
+<section class="panel backup-panel"><div><h2>Backup completo do banco</h2><p class="muted">Baixa o arquivo .db com cadastros, movimentos, orçamentos e regras recorrentes. Guarde a cópia em local seguro.</p></div><a class="button" href="/backup.db">Baixar backup .db</a></section>
+{% endblock %}

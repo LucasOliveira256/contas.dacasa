@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Gastos · Casa em ordem{% endblock %}
+{% block content %}
+<section class="page-head"><div><p class="eyebrow">LANÇAMENTOS</p><h1>Gastos</h1><p class="muted">Relatórios por categoria usam a data da compra.</p></div><a class="button" href="/transacoes/nova">+ Novo gasto</a></section>
+<form class="filter-bar" method="get"><label for="mes">Mês da compra</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button button-light" type="submit">Filtrar</button></form>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria / responsável</th><th>Pagamento</th><th>Status</th><th>Valor</th><th></th></tr></thead><tbody>
+{% for item in rows %}<tr><td>{{ item.purchase_date|date_br }}</td><td>{{ item.description }}{% if item.installment_number %}<small class="subline">Parcela {{ item.installment_number }}/{{ item.installment_count }}</small>{% endif %}{% if item.fixed_expense_id %}<small class="subline">Gasto fixo recorrente</small>{% endif %}</td><td>{{ item.category.name }}<small class="subline">{{ item.person.name }}</small></td><td>{% if item.card %}{{ item.card.name }}<small class="subline">Venc. {{ item.cashflow_date|date_br }}</small>{% elif item.account %}{{ item.account.name }}{% else %}Dinheiro/outro{% endif %}</td><td><span class="status status-{{ item.status }}">{{ item.status }}</span></td><td class="money">{{ item.amount_cents|brl }}</td><td><a class="text-link" href="/transacoes/{{ item.id }}/editar">Editar</a></td></tr>
+{% else %}<tr><td colspan="7" class="empty-cell">Nenhum gasto neste mês.</td></tr>{% endfor %}
+</tbody></table></div></section>
+<div class="floating-actions"><a class="button" href="/transacoes/nova">+ Lançar gasto</a><a class="button button-light" href="/transacoes/nova?tipo=previsto">+ Planejar gasto</a></div>
+{% endblock %}

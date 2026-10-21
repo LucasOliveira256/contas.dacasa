@@ -1,0 +1,14 @@
+services:
+  familia-financas:
+    build: .
+    container_name: familia-financas
+    ports:
+      - "8080:8080"
+    volumes:
+      - familia_financas_data:/data
+    environment:
+      TZ: America/Cuiaba
+      DATABASE_URL: sqlite:////data/financas.db
+    restart: unless-stopped
+volumes:
+  familia_financas_data:

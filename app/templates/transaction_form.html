@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · Casa em ordem{% endblock %}
+{% block content %}
+<section class="page-head"><div><p class="eyebrow">MOVIMENTAÇÃO</p><h1>{{ title }}</h1><p class="muted">Valores em reais; parcelamento gera uma linha por fatura de crédito.</p></div><a class="button button-light" href="/transacoes">Voltar</a></section>
+<form class="panel form-panel" method="post" action="{{ form_action }}">
+  <div class="form-grid">
+    <label class="field field-wide">Descrição<input name="description" required maxlength="240" value="{{ transaction.description if transaction else '' }}" placeholder="Ex.: supermercado, material escolar"></label>
+    <label class="field">Valor total (R$)<input name="amount" required inputmode="decimal" placeholder="0,00" value="{{ transaction.amount_cents|brl if transaction else '' }}"></label>
+    <label class="field">Data da compra<input type="date" name="purchase_date" required value="{{ transaction.purchase_date.isoformat() if transaction else today.isoformat() }}"></label>
+    <label class="field">Categoria<select name="category_id" required><option value="">Selecione…</option>{% for c in category_options %}<option value="{{ c.id }}" {% if transaction and transaction.category_id == c.id %}selected{% endif %}>{{ c.label }}</option>{% endfor %}</select></label>
+    <label class="field">Responsável<select name="person_id" required>{% for person in people %}<option value="{{ person.id }}" {% if transaction and transaction.person_id == person.id %}selected{% elif not transaction and person.name == 'Família' %}selected{% endif %}>{{ person.name }}</option>{% endfor %}</select></label>
+    <label class="field">Conta de pagamento<select name="account_id" id="account_id"><option value="">Nenhuma / dinheiro</option>{% for account in accounts %}<option value="{{ account.id }}" {% if transaction and transaction.account_id == account.id %}selected{% endif %}>{{ account.name }}{% if account.person %} · {{ account.person.name }}{% endif %}</option>{% endfor %}</select></label>
+    <label class="field">Cartão de pagamento<select name="card_id" id="card_id"><option value="">Não usar cartão</option>{% for card in cards %}<option value="{{ card.id }}" data-kind="{{ card.kind }}" {% if transaction and transaction.card_id == card.id %}selected{% endif %}>{{ card.name }} · {{ card.owner.name }}{% if card.kind == 'credito' %} · Crédito (fecha dia {{ card.closing_day }}){% elif card.kind == 'vale_alimentacao' %} · Vale Alimentação{% else %} · Débito{% endif %}</option>{% endfor %}</select></label>
+    {% if not transaction %}<label class="field" id="installments-field">Parcelas no cartão de crédito<select name="installments" id="installments">{% for n in range(1, 61) %}<option value="{{ n }}" {% if n == 1 %}selected{% endif %}>{{ n }}x</option>{% endfor %}</select><small class="muted">O valor informado é o total da compra; o sistema distribui os centavos sem perder valor.</small></label>{% else %}<input type="hidden" name="installments" value="1">{% endif %}
+    <label class="field">Status<select name="status"><option value="realizado" {% if default_status == 'realizado' %}selected{% endif %}>Realizado</option><option value="previsto" {% if default_status == 'previsto' %}selected{% endif %}>Previsto</option></select></label>
+  </div>
+  <div class="form-actions"><button class="button" type="submit">Salvar gasto</button><a class="button button-light" href="/transacoes">Cancelar</a></div>
+</form>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const cardSelect = document.getElementById('card_id');
+  const installmentField = document.getElementById('installments-field');
+  const installmentSelect = document.getElementById('installments');
+  function updateInstallments() {
+    if (!cardSelect || !installmentField || !installmentSelect) return;
+    const option = cardSelect.selectedOptions[0];
+    const isCredit = !option || !option.value || option.dataset.kind === 'credito';
+    installmentField.hidden = !isCredit;
+    installmentSelect.disabled = !isCredit;
+    if (!isCredit) installmentSelect.value = '1';
+  }
+  if (cardSelect) { cardSelect.addEventListener('change', updateInstallments); updateInstallments(); }
+});
+</script>
+{% endblock %}
