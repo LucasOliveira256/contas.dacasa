@@ -1,7 +1,85 @@
-# Código-fonte completo — Casa em ordem
+# Código-fonte completo — Casa em Ordem
 
-Versão atualizada com edição/exclusão de pessoas, categorias, cartões de débito/Vale Alimentação e gestão de poupança. Cada seção contém o arquivo integral correspondente.
+Projeto com autenticação, controle de usuários, proteção CSRF, senhas Argon2 e SQLite persistente. Cada seção contém o conteúdo integral do arquivo correspondente.
 
+## `README.md`
+
+````markdown
+# Casa em Ordem — Finanças da Família
+
+Aplicação web para controlar receitas, despesas, cartões, orçamento e poupanças familiares. Executa em um container Docker, com SQLite persistente e interface responsiva em português.
+
+## Funcionalidades
+
+- Dashboard mensal, histórico e projeção de 12 meses.
+- Receitas, despesas fixas/variáveis/planejadas e parcelamento no crédito.
+- Cartões de crédito, débito e Vale Alimentação.
+- Pessoas, categorias, contas, orçamentos e relatórios.
+- Poupança por pessoa, com depósitos, retiradas e juros.
+- Gráficos offline, exportação CSV e backup do banco.
+- Login, gestão de usuários, troca obrigatória de senhas iniciais e proteção CSRF.
+
+## Executar
+
+Requer Docker Engine e Docker Compose.
+
+```bash
+git clone <URL-DO-REPOSITORIO>
+cd familia-financas
+cp .env.example .env
+# Mantenha COOKIE_SECURE=true em produção e configure FORWARDED_ALLOW_IPS para o IP confiável do proxy.
+docker compose up -d --build
+```
+
+A aplicação escuta a porta `8080`. Para acesso público, configure um proxy reverso com HTTPS e acesse pelo domínio HTTPS. **Não encaminhe a porta 8080 diretamente à internet.**
+
+Se ainda não houver proxy HTTPS e for necessário configurar a senha inicial em rede local usando HTTP simples, defina temporariamente `COOKIE_SECURE=false` em `.env`, inicie a aplicação e acesse `http://localhost:8080`. Troque a senha antes de liberar o acesso público; configure HTTPS no proxy, volte `COOKIE_SECURE=true` e reinicie:
+
+```bash
+docker compose up -d --build
+docker compose logs -f familia-financas
+```
+
+## Primeiro acesso e usuários
+
+- Usuário inicial: `Admin`
+- Senha provisória: `admin`
+- O primeiro login exige uma nova senha com pelo menos 12 caracteres. Faça essa troca antes de liberar o acesso público.
+- O Admin pode criar usuários na página **Usuários**. Cada novo usuário precisa trocar sua senha inicial no primeiro login.
+- Todos os usuários podem alterar a própria senha.
+
+## Segurança e persistência
+
+- Senhas protegidas por hash Argon2; sessões assinadas com validade de 8 horas; formulários protegidos contra CSRF; limite de tentativas de login.
+- O processo web roda sem privilégios de root. Banco SQLite e segredo de sessão ficam no volume Docker `familia_financas_data`, com permissões restritas. O segredo é gerado automaticamente e persiste entre reinicializações; trocar a senha invalida sessões anteriores.
+- Se o proxy reverso estiver em outro IP, defina `FORWARDED_ALLOW_IPS` em `.env` com o IP exato e confiável do proxy — nunca use `*`.
+- No MikroTik, encaminhe as portas públicas HTTPS somente para o proxy reverso; não crie DST-NAT público para a porta `8080`.
+- `docker compose down` preserva os dados. **Não use `docker compose down -v`**, pois isso remove o volume.
+- O SQLite não é criptografado em repouso: restrinja o acesso ao host e proteja backups. Para risco de acesso físico ao disco, use criptografia de disco/volume no sistema operacional. Mantenha backups em local seguro.
+
+## Comandos úteis
+
+```bash
+docker compose logs -f familia-financas
+docker compose down
+docker compose up -d
+```
+
+## Licença
+
+Defina a licença desejada antes de publicar o repositório (por exemplo, MIT).
+````
+
+## `.env.example`
+
+````text
+# Use true em produção, com o sistema acessado por HTTPS.
+COOKIE_SECURE=true
+
+# Se o proxy reverso estiver em outro IP, indique o IP exato dele.
+# Exemplo: FORWARDED_ALLOW_IPS=10.0.0.20
+FORWARDED_ALLOW_IPS=127.0.0.1
+````
 
 ## `.dockerignore`
 
@@ -13,90 +91,249 @@ __pycache__/
 .venv/
 .git/
 tests/
+
+.env
+.session_secret.key
 ````
 
+## `.gitignore`
+
+````text
+__pycache__/
+*.py[cod]
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+.venv/
+.env
+.session_secret.key
+.pytest_cache/
+````
 
 ## `Dockerfile`
 
-````text
+````bash
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 TZ=America/Cuiaba DATABASE_URL=sqlite:////data/financas.db
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system app && useradd --system --gid app --home-dir /app app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
-RUN mkdir -p /data
+COPY start.sh /usr/local/bin/start.sh
+RUN chmod 755 /usr/local/bin/start.sh && mkdir -p /data && chown app:app /data
 EXPOSE 8080
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+ENTRYPOINT ["/usr/local/bin/start.sh"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
 ````
 
+## `docker-compose.yml`
 
-## `README.md`
+````yaml
+services:
+  familia-financas:
+    build: .
+    container_name: familia-financas
+    ports:
+      - "8080:8080"
+    volumes:
+      - familia_financas_data:/data
+    environment:
+      TZ: America/Cuiaba
+      DATABASE_URL: sqlite:////data/financas.db
+      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "${FORWARDED_ALLOW_IPS:-127.0.0.1}"]
+    restart: unless-stopped
+volumes:
+  familia_financas_data:
+````
+
+## `requirements.txt`
 
 ````text
-# Casa em ordem — Finanças da família
-
-Aplicação web local para organizar receitas, despesas, cartões, orçamento, projeções e poupanças pessoais. Não exige autenticação nem serviço externo durante o uso. O banco SQLite fica no volume persistente `/data`.
-
-## Executar
-
-```bash
-docker compose up -d --build
-```
-
-Abra `http://IP-DO-SERVIDOR:8080` na rede local. No próprio servidor, use `http://localhost:8080`.
-
-Para parar sem apagar os dados:
-
-```bash
-docker compose down
-```
-
-Depois, `docker compose up -d` volta a usar o mesmo volume. Para ver logs: `docker compose logs -f familia-financas`.
-
-## Alterações nesta versão
-
-- Pessoas podem ser editadas ou excluídas; pessoas que já aparecem no histórico são inativadas para preservar os lançamentos.
-- Categorias podem ser excluídas. As excluídas saem dos formulários novos; o histórico antigo continua ligado à categoria inativa. A taxonomia `Lazer/Moto` é migrada para `Lazer`, com as subcategorias antigas inativadas.
-- Descontos em folha têm os tipos Plano de saúde, INSS, IR, Vale e Outros. São informativos e não entram novamente no fluxo de caixa.
-- Cartões têm tipos Crédito, Débito e Vale Alimentação. Só os cartões de crédito têm dias de fechamento/vencimento e fatura; os lançamentos de débito e vale usam a data da compra e não permitem parcelamento.
-- A página **Poupança** permite criar contas de capital por pessoa, registrar depósitos, retiradas e juros de aplicações. O capital é calculado em centavos; retirada acima do saldo é recusada. O saldo inicial é informado ao criar a poupança.
-
-## Regras importantes
-
-- Valores financeiros são armazenados e calculados como centavos inteiros. O formulário aceita, por exemplo, `1.234,56`.
-- A compra no cartão de crédito é classificada por sua data original para relatórios por categoria; a saída do caixa cai na data de vencimento da fatura. O cartão não gera uma segunda despesa de pagamento.
-- Compra parcelada recebe uma linha por parcela/fatura; os centavos restantes são distribuídos nas primeiras parcelas para que a soma permaneça idêntica ao total da compra.
-- Gastos fixos geram ocorrências mensais por até 12 meses à frente e não duplicam ocorrências já existentes. Edite uma ocorrência em **Gastos** para ajustar só aquele mês.
-- Depósitos, retiradas e juros na página **Poupança** compõem um livro auxiliar de capital, separado de despesas/receitas do orçamento doméstico; assim, transferir dinheiro para a poupança não é contado como consumo.
-- Plano de saúde, INSS, IR e demais descontos em folha ficam informativos e não entram como uma segunda despesa nem reduzem novamente o salário. Cadastre como salário o valor líquido que efetivamente entra na conta.
-- A projeção considera as receitas cadastradas nas datas correspondentes. Ela não presume salários futuros automaticamente; lance as entradas futuras para vê-las na projeção.
-- O backup usa o mecanismo de backup do SQLite para gerar um arquivo consistente, inclusive quando o banco está em uso.
-
-## Arquitetura e operação
-
-- Python 3.12, FastAPI, SQLAlchemy, SQLite, Jinja2 e templates responsivos.
-- As tabelas são criadas na primeira execução. Categorias e pessoas iniciais são inseridas de forma idempotente; o banco existente recebe uma migração aditiva para o tipo do cartão, e novas tabelas de poupança são criadas sem apagar dados.
-- Fuso horário do container: `America/Cuiaba`.
-- Sem CDN: os gráficos são desenhados em canvas por um renderizador JavaScript local, e o adaptador HTMX usado em uma tela é local. O ambiente de geração não tinha acesso à rede para baixar as distribuições oficiais de Chart.js e HTMX; esses arquivos oficiais não estão embutidos. As telas e quatro gráficos continuam funcionando offline com as implementações locais incluídas, mas não são as distribuições upstream dessas bibliotecas.
-
-## Segurança e rede
-
-A aplicação não tem autenticação conforme solicitado. Exponha a porta 8080 apenas na rede confiável; não publique diretamente na internet.
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+SQLAlchemy==2.0.40
+Jinja2==3.1.6
+python-multipart==0.0.20
+pydantic==2.11.4
+argon2-cffi==23.1.0
 ````
 
+## `start.sh`
+
+````bash
+#!/bin/sh
+set -eu
+# O volume já existia nas versões anteriores, então corrigimos proprietário e permissões ao iniciar.
+mkdir -p /data
+chown -R app:app /data
+chmod 700 /data
+find /data -maxdepth 1 -type f -exec chmod 600 {} \;
+umask 077
+exec gosu app "$@"
+````
 
 ## `app/__init__.py`
 
-````text
+````python
 """Gestão financeira familiar."""
 ````
 
+## `app/auth_middleware.py`
+
+````python
+"""Autenticação obrigatória, CSRF e cabeçalhos básicos de segurança."""
+import os
+import secrets
+from urllib.parse import quote
+
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse, RedirectResponse
+from sqlalchemy import select
+
+from .database import SessionLocal
+from .models import User
+
+PUBLIC_PATHS = {"/login", "/healthz"}
+PASSWORD_PATHS = {"/alterar-senha", "/logout"}
+
+
+class AuthSecurityMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive=receive)
+        path = request.url.path
+        session = scope.setdefault("session", {})
+        session.setdefault("csrf_token", secrets.token_urlsafe(32))
+        user_state = None
+
+        # Revalida a conta em cada requisição para respeitar usuários inativados.
+        user_id = session.get("user_id")
+        if user_id:
+            db = SessionLocal()
+            try:
+                user = db.scalar(select(User).where(User.id == int(user_id), User.is_active.is_(True)))
+                session_version = int(session.get("auth_version", -1))
+                if user and session_version == user.session_version:
+                    user_state = {
+                        "id": user.id,
+                        "username": user.username,
+                        "is_admin": user.is_admin,
+                        "must_change_password": user.must_change_password,
+                    }
+                else:
+                    session.clear()
+                    session["csrf_token"] = secrets.token_urlsafe(32)
+            except (ValueError, TypeError):
+                session.clear()
+                session["csrf_token"] = secrets.token_urlsafe(32)
+            finally:
+                db.close()
+        scope.setdefault("state", {})["current_user"] = user_state
+
+        is_static = path == "/static" or path.startswith("/static/")
+        is_public = path in PUBLIC_PATHS or is_static or path == "/favicon.ico"
+
+        if not is_public and not user_state:
+            query = scope.get("query_string", b"").decode("latin-1")
+            destination = path + (f"?{query}" if query else "")
+            response = RedirectResponse("/login?next=" + quote(destination, safe="/?=&"), status_code=303)
+            await self._send_secure(response, scope, receive, send)
+            return
+
+        if user_state and user_state["must_change_password"] and path not in PASSWORD_PATHS and not is_static:
+            response = RedirectResponse("/alterar-senha?obrigatoria=1", status_code=303)
+            await self._send_secure(response, scope, receive, send)
+            return
+
+        if path.startswith("/usuarios") and user_state and not user_state["is_admin"]:
+            response = RedirectResponse("/?erro=Acesso+restrito+ao+Admin", status_code=303)
+            await self._send_secure(response, scope, receive, send)
+            return
+
+        # Todas as operações POST usam formulários HTML com token anti-CSRF.
+        downstream_receive = receive
+        if request.method.upper() == "POST":
+            try:
+                body = await request.body()
+                form = await request.form()
+            except Exception:
+                response = PlainTextResponse("Formulário inválido.", status_code=400)
+                await self._send_secure(response, scope, receive, send)
+                return
+            supplied = str(form.get("_csrf", ""))
+            expected = str(session.get("csrf_token", ""))
+            if not supplied or not expected or not secrets.compare_digest(supplied, expected):
+                response = PlainTextResponse("Token de segurança inválido. Recarregue a página e tente novamente.", status_code=403)
+                await self._send_secure(response, scope, receive, send)
+                return
+            sent = False
+
+            async def replay_receive():
+                nonlocal sent
+                if not sent:
+                    sent = True
+                    return {"type": "http.request", "body": body, "more_body": False}
+                return {"type": "http.disconnect"}
+
+            downstream_receive = replay_receive
+
+        async def secure_send(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                secure_headers = {
+                    b"x-content-type-options": b"nosniff",
+                    b"x-frame-options": b"DENY",
+                    b"referrer-policy": b"strict-origin-when-cross-origin",
+                    b"permissions-policy": b"camera=(), microphone=(), geolocation=()",
+                    b"content-security-policy": b"default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+                    b"cache-control": b"no-store",
+                }
+                current = {key.lower() for key, _ in headers}
+                for key, value in secure_headers.items():
+                    if key not in current:
+                        headers.append((key, value))
+                if os.getenv("COOKIE_SECURE", "true").lower() in ("1", "true", "yes", "on") and b"strict-transport-security" not in current:
+                    headers.append((b"strict-transport-security", b"max-age=31536000"))
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, downstream_receive, secure_send)
+
+    async def _send_secure(self, response, scope, receive, send):
+        async def secure_send(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                security_headers = {
+                    b"x-content-type-options": b"nosniff",
+                    b"x-frame-options": b"DENY",
+                    b"referrer-policy": b"strict-origin-when-cross-origin",
+                    b"content-security-policy": b"default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+                    b"cache-control": b"no-store",
+                }
+                existing = {key.lower() for key, _ in headers}
+                for key, value in security_headers.items():
+                    if key not in existing:
+                        headers.append((key, value))
+                message["headers"] = headers
+            await send(message)
+        await response(scope, receive, secure_send)
+````
 
 ## `app/database.py`
 
-````text
+````python
 import os
 from pathlib import Path
 from sqlalchemy import create_engine, event, inspect, text
@@ -144,22 +381,32 @@ def migrate_database() -> None:
         if "kind" not in columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE credit_cards ADD COLUMN kind VARCHAR(30) NOT NULL DEFAULT 'credito'"))
-    # create_all adiciona as novas tabelas de poupança sem alterar tabelas antigas.
+    # Permite invalidar sessões antigas ao trocar a senha.
+    if "users" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("users")}
+        if "session_version" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"))
+    # create_all adiciona tabelas novas sem alterar os dados financeiros antigos.
     Base.metadata.create_all(bind=engine)
 ````
 
-
 ## `app/main.py`
 
-````text
+````python
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
+import os
 from .database import Base, engine, SessionLocal, migrate_database
 from . import models  # registra os mapeamentos antes do create_all
 from .seed import seed_database
 from .services.recurring import ensure_fixed_transactions
-from .routers import dashboard, transactions, registrations, incomes, cards, budgets, reports, savings
+from .routers import dashboard, transactions, registrations, incomes, cards, budgets, reports, savings, auth
+from .auth_middleware import AuthSecurityMiddleware
+from .security import session_secret
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -173,7 +420,17 @@ async def lifespan(app: FastAPI):
         db.close()
     yield
 
-app = FastAPI(title="Finanças da Família", description="Controle financeiro familiar local", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Casa em Ordem", description="Gestão financeira familiar", version="1.1.0", lifespan=lifespan)
+# SessionMiddleware fica por fora do middleware de autenticação para validar cookies assinados.
+app.add_middleware(AuthSecurityMiddleware)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=session_secret(),
+    session_cookie="casa_em_ordem_session",
+    max_age=8 * 60 * 60,
+    same_site="lax",
+    https_only=os.getenv("COOKIE_SECURE", "true").strip().lower() in ("1", "true", "yes", "on"),
+)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(dashboard.router)
 app.include_router(transactions.router)
@@ -183,16 +440,34 @@ app.include_router(cards.router)
 app.include_router(budgets.router)
 app.include_router(reports.router)
 app.include_router(savings.router)
-````
+app.include_router(auth.router)
 
+@app.get("/healthz", include_in_schema=False)
+def healthz():
+    return JSONResponse({"status": "ok"})
+````
 
 ## `app/models.py`
 
-````text
+````python
 from datetime import date, datetime
 from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(32), nullable=False)
+    username_key: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    session_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
+
 
 class Person(Base):
     __tablename__ = "people"
@@ -335,17 +610,194 @@ class SavingsMovement(Base):
     )
 ````
 
-
 ## `app/routers/__init__.py`
 
-````text
+````python
 """Rotas HTTP da aplicação."""
 ````
 
+## `app/routers/auth.py`
+
+````python
+"""Login, troca de senha e administração de usuários."""
+import re
+import secrets
+import time
+from collections import defaultdict, deque
+from datetime import datetime, timezone
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import RedirectResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from starlette.templating import Jinja2Templates
+
+from ..database import get_db
+from ..models import User
+from ..security import hash_password, verify_password
+
+router = APIRouter(tags=["autenticação"])
+templates = Jinja2Templates(directory="app/templates")
+LOGIN_ATTEMPTS: dict[str, deque[float]] = defaultdict(deque)
+RATE_WINDOW_SECONDS = 15 * 60
+MAX_ATTEMPTS = 5
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
+
+
+def _ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _limited(ip: str) -> bool:
+    now = time.monotonic()
+    attempts = LOGIN_ATTEMPTS[ip]
+    while attempts and now - attempts[0] > RATE_WINDOW_SECONDS:
+        attempts.popleft()
+    return len(attempts) >= MAX_ATTEMPTS
+
+
+def _bad_attempt(ip: str) -> None:
+    now = time.monotonic()
+    attempts = LOGIN_ATTEMPTS[ip]
+    while attempts and now - attempts[0] > RATE_WINDOW_SECONDS:
+        attempts.popleft()
+    attempts.append(now)
+
+
+def _redirect_error(path: str, message: str):
+    return RedirectResponse(f"{path}?{urlencode({'erro': message})}", status_code=303)
+
+
+@router.get("/login")
+def login_page(request: Request):
+    current = getattr(request.state, "current_user", None)
+    if current:
+        if current["must_change_password"]:
+            return RedirectResponse("/alterar-senha", status_code=303)
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(request=request, name="login.html", context={
+        "csrf_token": request.session.get("csrf_token", ""),
+        "erro": request.query_params.get("erro"),
+        "next_url": request.query_params.get("next", "/"),
+    })
+
+
+@router.post("/login")
+def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    next_url: str = Form("/"),
+    db: Session = Depends(get_db),
+):
+    ip = _ip(request)
+    if _limited(ip):
+        return _redirect_error("/login", "Muitas tentativas. Aguarde 15 minutos antes de tentar novamente.")
+    # Registra a tentativa antes do hash, limitando hashes Argon2 concorrentes.
+    _bad_attempt(ip)
+    user_key = username.strip().casefold()
+    user = db.scalar(select(User).where(User.username_key == user_key, User.is_active.is_(True)))
+    if not user or not verify_password(user.password_hash, password):
+        return _redirect_error("/login", "Usuário ou senha inválidos.")
+
+    LOGIN_ATTEMPTS.pop(ip, None)
+    user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+    request.session.clear()
+    request.session["user_id"] = user.id
+    request.session["auth_version"] = user.session_version
+    request.session["csrf_token"] = secrets.token_urlsafe(32)
+    if user.must_change_password:
+        return RedirectResponse("/alterar-senha?obrigatoria=1", status_code=303)
+    # Aceita somente caminhos relativos locais; evita redirecionamento aberto.
+    safe_next = next_url if next_url.startswith("/") and not next_url.startswith("//") else "/"
+    return RedirectResponse(safe_next, status_code=303)
+
+
+@router.post("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login?ok=logout", status_code=303)
+
+
+@router.get("/alterar-senha")
+def change_password_page(request: Request):
+    current = request.state.current_user
+    return templates.TemplateResponse(request=request, name="change_password.html", context={
+        "csrf_token": request.session.get("csrf_token", ""),
+        "username": current["username"],
+        "mandatory": current["must_change_password"],
+        "erro": request.query_params.get("erro"),
+        "ok": request.query_params.get("ok"),
+    })
+
+
+@router.post("/alterar-senha")
+def change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    current = request.state.current_user
+    user = db.get(User, current["id"])
+    if not user or not verify_password(user.password_hash, current_password):
+        return _redirect_error("/alterar-senha", "A senha atual está incorreta.")
+    if new_password != confirm_password:
+        return _redirect_error("/alterar-senha", "A confirmação não corresponde à nova senha.")
+    if len(new_password) < 12:
+        return _redirect_error("/alterar-senha", "A nova senha deve ter pelo menos 12 caracteres.")
+    if new_password == current_password:
+        return _redirect_error("/alterar-senha", "Escolha uma senha diferente da atual.")
+    user.password_hash = hash_password(new_password)
+    user.must_change_password = False
+    user.session_version += 1
+    db.commit()
+    request.session["auth_version"] = user.session_version
+    request.session["csrf_token"] = secrets.token_urlsafe(32)
+    return RedirectResponse("/?ok=1", status_code=303)
+
+
+@router.get("/usuarios")
+def users_page(request: Request, db: Session = Depends(get_db)):
+    users = list(db.scalars(select(User).order_by(User.is_admin.desc(), User.username_key)).all())
+    return templates.TemplateResponse(request=request, name="users.html", context={
+        "csrf_token": request.session.get("csrf_token", ""),
+        "current_user": request.state.current_user,
+        "users": users,
+        "erro": request.query_params.get("erro"),
+        "ok": request.query_params.get("ok"),
+    })
+
+
+@router.post("/usuarios")
+def create_user(
+    username: str = Form(...),
+    password: str = Form(...),
+    confirm_password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    clean_username = username.strip()
+    if not USERNAME_PATTERN.fullmatch(clean_username):
+        return _redirect_error("/usuarios", "O usuário deve ter 3 a 32 caracteres: letras, números, ponto, hífen ou sublinhado.")
+    if len(password) < 12:
+        return _redirect_error("/usuarios", "A senha inicial deve ter pelo menos 12 caracteres.")
+    if password != confirm_password:
+        return _redirect_error("/usuarios", "A confirmação da senha não corresponde.")
+    key = clean_username.casefold()
+    if db.scalar(select(User.id).where(User.username_key == key)):
+        return _redirect_error("/usuarios", "Já existe um usuário com esse nome.")
+    db.add(User(username=clean_username, username_key=key, password_hash=hash_password(password),
+                is_admin=False, is_active=True, must_change_password=True))
+    db.commit()
+    return RedirectResponse("/usuarios?ok=1", status_code=303)
+````
 
 ## `app/routers/budgets.py`
 
-````text
+````python
 from datetime import date
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -419,10 +871,9 @@ def projection(request: Request, db: Session = Depends(get_db)):
     return page(request, db, "projection.html", active_nav="projecao", months=months)
 ````
 
-
 ## `app/routers/cards.py`
 
-````text
+````python
 from collections import defaultdict
 from datetime import date
 from fastapi import APIRouter, Depends, Request
@@ -458,10 +909,9 @@ def card_invoices(request: Request, mes: str | None = None, cartao: int | None =
                 selected_card=selected_card, items=items, total=total, card_totals=card_totals)
 ````
 
-
 ## `app/routers/common.py`
 
-````text
+````python
 from datetime import date
 from fastapi import Request
 from sqlalchemy import select
@@ -480,7 +930,7 @@ def base_context(request: Request, db: Session, **extra):
     accounts = list(db.scalars(select(Account).where(Account.active.is_(True)).order_by(Account.name)).all())
     cards = list(db.scalars(select(CreditCard).where(CreditCard.active.is_(True)).order_by(CreditCard.name)).all())
     category_options = [{"id": c.id, "label": category_name(db, c.id), "name": c.name} for c in categories]
-    context = {"request": request, "today": date.today(), "erro": request.query_params.get("erro"), "ok": request.query_params.get("ok"), "people": people,
+    context = {"request": request, "today": date.today(), "current_user": getattr(request.state, "current_user", None), "csrf_token": request.session.get("csrf_token", ""), "erro": request.query_params.get("erro"), "ok": request.query_params.get("ok"), "people": people,
                "categories": categories, "category_options": category_options,
                "accounts": accounts, "cards": cards, "active_nav": "", **extra}
     return context
@@ -489,10 +939,9 @@ def page(request: Request, db: Session, template: str, **extra):
     return templates.TemplateResponse(request=request, name=template, context=base_context(request, db, **extra))
 ````
 
-
 ## `app/routers/dashboard.py`
 
-````text
+````python
 from collections import defaultdict
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Request
@@ -616,10 +1065,9 @@ def upcoming_partial(request: Request, db: Session = Depends(get_db)):
                                       context=base_context(request, db, rows=rows))
 ````
 
-
 ## `app/routers/incomes.py`
 
-````text
+````python
 from datetime import date
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -669,10 +1117,9 @@ def delete_income(income_id: int, db: Session = Depends(get_db)):
     return RedirectResponse("/receitas", status_code=303)
 ````
 
-
 ## `app/routers/registrations.py`
 
-````text
+````python
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -837,10 +1284,9 @@ def create_card(
     return RedirectResponse("/cadastros?ok=1", status_code=303)
 ````
 
-
 ## `app/routers/reports.py`
 
-````text
+````python
 import csv
 import io
 import os
@@ -937,10 +1383,9 @@ def backup_database():
                         background=BackgroundTask(lambda: os.path.exists(temp_path) and os.remove(temp_path)))
 ````
 
-
 ## `app/routers/savings.py`
 
-````text
+````python
 from datetime import date
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -1019,10 +1464,9 @@ def create_movement(
     return RedirectResponse("/poupanca?ok=1", status_code=303)
 ````
 
-
 ## `app/routers/transactions.py`
 
-````text
+````python
 from datetime import date
 from uuid import uuid4
 from fastapi import APIRouter, Depends, Form, Request
@@ -1251,10 +1695,9 @@ def update_fixed(
     return RedirectResponse("/transacoes/fixos", status_code=303)
 ````
 
-
 ## `app/schemas.py`
 
-````text
+````python
 from datetime import date
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
@@ -1296,13 +1739,69 @@ class FixedExpenseCreate(BaseModel):
     card_id: int | None = None
 ````
 
+## `app/security.py`
+
+````python
+"""Funções de segurança: hash de senha e segredo persistente de sessão."""
+import os
+import secrets
+from pathlib import Path
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
+
+_password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
+
+
+def hash_password(password: str) -> str:
+    return _password_hasher.hash(password)
+
+
+def verify_password(password_hash: str, password: str) -> bool:
+    try:
+        return _password_hasher.verify(password_hash, password)
+    except (VerifyMismatchError, InvalidHashError, TypeError):
+        return False
+
+
+def _default_secret_path() -> Path:
+    configured = os.getenv("SESSION_SECRET_FILE")
+    if configured:
+        return Path(configured)
+    database_url = os.getenv("DATABASE_URL", "sqlite:///./financas.db")
+    if database_url.startswith("sqlite:////"):
+        db_path = Path(database_url.replace("sqlite:////", "/", 1))
+        return db_path.parent / "session_secret.key"
+    return Path(".session_secret.key")
+
+
+def session_secret() -> str:
+    """Cria um segredo criptograficamente aleatório e persiste no volume."""
+    env_secret = os.getenv("SESSION_SECRET")
+    if env_secret:
+        if len(env_secret) < 32:
+            raise RuntimeError("SESSION_SECRET precisa ter pelo menos 32 caracteres.")
+        return env_secret
+    path = _default_secret_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("x", encoding="utf-8") as file:
+            file.write(secrets.token_urlsafe(48))
+        path.chmod(0o600)
+    except FileExistsError:
+        pass
+    value = path.read_text(encoding="utf-8").strip()
+    if len(value) < 32:
+        raise RuntimeError(f"Segredo de sessão inválido em {path}; apague-o com a aplicação parada para gerar outro.")
+    return value
+````
 
 ## `app/seed.py`
 
-````text
+````python
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from .models import Person, Category
+from .models import Person, Category, User
+from .security import hash_password
 
 PEOPLE = ["Marido", "Esposa", "Família"]
 CATEGORIES = {
@@ -1343,6 +1842,14 @@ def seed_database(db: Session) -> None:
         for name in PEOPLE:
             db.add(Person(name=name))
         db.flush()
+    # Cria Admin/admin apenas no primeiro boot; o primeiro login exige troca imediata.
+    if not db.scalar(select(User.id).limit(1)):
+        admin_name = "Admin"
+        admin_password = "admin"
+        db.add(User(username=admin_name, username_key=admin_name.casefold(),
+                    password_hash=hash_password(admin_password), is_admin=True,
+                    is_active=True, must_change_password=True))
+        db.flush()
     _migrate_lazer_categories(db)
     roots = {c.name: c for c in db.scalars(select(Category).where(Category.parent_id.is_(None))).all()}
     for root_name, children in CATEGORIES.items():
@@ -1358,17 +1865,15 @@ def seed_database(db: Session) -> None:
     db.commit()
 ````
 
-
 ## `app/services/__init__.py`
 
-````text
+````python
 """Regras de negócio."""
 ````
 
-
 ## `app/services/finance.py`
 
-````text
+````python
 import calendar
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -1482,10 +1987,9 @@ def active_transactions_for_month(db: Session, year: int, month: int, by_cashflo
     ).order_by(column.desc(), FinancialTransaction.id.desc())).all())
 ````
 
-
 ## `app/services/recurring.py`
 
-````text
+````python
 from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -1532,10 +2036,9 @@ def ensure_fixed_transactions(db: Session, today: date | None = None, months_ahe
     return created
 ````
 
-
 ## `app/services/savings.py`
 
-````text
+````python
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..models import SavingsAccount, SavingsMovement
@@ -1553,10 +2056,9 @@ def savings_balance(db: Session, account: SavingsAccount) -> int:
     return balance
 ````
 
-
 ## `app/static/css/app.css`
 
-````text
+````css
 :root {
   --ink: #183b30; --green: #236b56; --green-dark: #174b3b; --green-soft: #e8f3ed;
   --paper: #f5f7f4; --surface: #fff; --muted: #6c7b73; --line: #e0e7e1;
@@ -1577,7 +2079,7 @@ button, .button { cursor: pointer; }
 .brand small { display: block; color: #b7cec2; font-size: 11px; font-weight: 500; letter-spacing: .04em; }
 .brand-mark { background: #d7e8d9; color: #153e31; border-radius: 12px; width: 42px; height: 42px; display: inline-grid; place-items: center; font-size: 13px; font-weight: 850; }
 .top-date { font-size: 12px; color: #c2d4ca; white-space: nowrap; }
-.nav-grid { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 4px; padding: 8px max(12px, calc((100vw - 1240px) / 2)); background: #fff; border-bottom: 1px solid var(--line); }
+.nav-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px; padding: 8px max(12px, calc((100vw - 1240px) / 2)); background: #fff; border-bottom: 1px solid var(--line); }
 .nav-item { min-height: 37px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 7px 6px; border-radius: 8px; font-size: 11px; font-weight: 650; color: #5a6a61; white-space: nowrap; }
 .nav-item:hover { background: #f1f6f2; color: var(--ink); }
 .nav-item.active { color: #fff; background: var(--green); }
@@ -1811,12 +2313,48 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 
 .inactive-list { margin-top: 12px; font-size: 11px; color: var(--muted); }
 .inactive-list summary { cursor: pointer; font-weight: 700; padding: 7px 0; }
-````
 
+
+/* Login, sessões e administração de usuários */
+.top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.top-actions form { margin: 0; }
+.top-action { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 6px 9px; border: 1px solid rgba(220, 239, 226, .3); border-radius: 8px; color: #e4f1e8; background: transparent; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; white-space: nowrap; }
+.top-action:hover { color: #fff; background: rgba(255,255,255,.09); }
+.auth-body { min-height: 100vh; background: radial-gradient(circle at top, #e4eee7, #f5f7f4 56%); }
+.auth-wrap { width: min(100% - 28px, 430px); margin: 0 auto; padding: clamp(28px, 8vh, 76px) 0 32px; }
+.auth-brand { display: flex; gap: 12px; align-items: center; justify-content: center; color: var(--ink); margin-bottom: 22px; }
+.auth-brand strong { display: block; font-size: 21px; letter-spacing: -.5px; }
+.auth-brand small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.auth-panel { padding: 25px; box-shadow: 0 18px 55px rgba(31, 63, 48, .09); }
+.auth-panel h1 { margin-bottom: 10px; }
+.auth-panel > p { font-size: 12px; line-height: 1.6; }
+.form-stack { display: grid; gap: 14px; }
+.field { display: grid; gap: 6px; color: #3a5345; font-size: 12px; font-weight: 700; }
+.field small { font-size: 10px; font-weight: 500; }
+.auth-submit { width: 100%; margin-top: 4px; min-height: 44px; font-size: 13px; }
+.auth-footnote { text-align: center; color: var(--muted); font-size: 10px !important; margin: 17px 0 0; }
+.auth-secondary-form { text-align: center; margin-top: 15px; }
+.auth-user-form { max-width: 820px; }
+.auth-user-form .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.auth-user-form .form-actions { align-self: end; }
+.notice { padding: 11px 13px; border-radius: 9px; margin: 12px 0 16px; font-size: 12px; line-height: 1.5; }
+.notice.error { color: #8f312a; background: #fff0ed; border: 1px solid #f2d1ca; }
+.notice.success { color: #286747; background: #e8f3ed; border: 1px solid #cee2d4; }
+.text-button { border: 0; background: transparent; color: var(--green); cursor: pointer; font-weight: 700; padding: 6px; }
+.text-button:hover { text-decoration: underline; }
+@media (max-width: 680px) {
+  .topbar { align-items: center; gap: 8px; }
+  .top-actions { gap: 4px; }
+  .top-action { padding: 5px 6px; font-size: 10px; }
+  .top-actions .top-date { display: none; }
+  .auth-panel { padding: 19px; }
+  .auth-user-form .form-grid { grid-template-columns: minmax(0, 1fr); }
+}
+````
 
 ## `app/static/js/app.js`
 
-````text
+````javascript
 (() => {
   function renderCharts() {
     const dataNode = document.getElementById("chart-data");
@@ -1833,10 +2371,9 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 })();
 ````
 
-
 ## `app/static/js/htmx-lite.js`
 
-````text
+````javascript
 /* Adaptador mínimo para os atributos hx-get/hx-trigger/hx-swap usados neste projeto. */
 (() => {
   async function loadElement(element) {
@@ -1859,10 +2396,9 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 })();
 ````
 
-
 ## `app/static/js/local-charts.js`
 
-````text
+````javascript
 /* Renderizador local de canvas para gráficos offline. Interface limitada ao uso desta aplicação. */
 (() => {
   const palette = ["#236b56", "#e2a348", "#547bba", "#ba6d58", "#8d7ab8", "#63a6a1", "#d477a8", "#8a9b65", "#7b8794", "#c4a75b"];
@@ -1971,10 +2507,9 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 })();
 ````
 
-
 ## `app/templates/base.html`
 
-````text
+````html
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -1990,7 +2525,10 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 <body>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Página inicial"><span class="brand-mark">R$</span><span>Casa em ordem<small>Finanças da família</small></span></a>
-    <span class="top-date">{{ today.strftime('%d/%m/%Y') }}</span>
+    <div class="top-actions">
+      <span class="top-date">{{ today.strftime('%d/%m/%Y') }}</span>
+      {% if current_user %}<a class="top-action" href="/alterar-senha">{{ current_user.username }}</a>{% if current_user.is_admin %}<a class="top-action" href="/usuarios">Usuários</a>{% endif %}<form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="top-action" type="submit">Sair</button></form>{% endif %}
+    </div>
   </header>
   <nav class="nav-grid" aria-label="Navegação principal">
     <a class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}" href="/">Visão geral</a>
@@ -2005,6 +2543,7 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
     <a class="nav-item {% if active_nav == 'historico' %}active{% endif %}" href="/historico">Histórico</a>
     <a class="nav-item {% if active_nav == 'relatorios' %}active{% endif %}" href="/relatorios">Relatórios</a>
     <a class="nav-item {% if active_nav == 'cadastros' %}active{% endif %}" href="/cadastros">Cadastros</a>
+    {% if current_user and current_user.is_admin %}<a class="nav-item {% if request.url.path.startswith('/usuarios') %}active{% endif %}" href="/usuarios">Usuários</a>{% endif %}
   </nav>
   <main class="container">
     {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
@@ -2016,24 +2555,22 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 </html>
 ````
 
-
 ## `app/templates/budgets.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Orçamento mensal · Casa em ordem{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">CONTROLE DO PLANEJADO</p><h1>Orçamento mensal</h1><p class="muted">O gasto contabilizado no orçamento é classificado pela data da compra e pelo status realizado.</p></div></section>
 <form class="filter-bar" method="get"><label for="mes">Mês</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button button-light">Ver mês</button></form>
-<form class="panel form-panel" method="post" action="/orcamento"><h2>Definir orçamento por categoria</h2><div class="form-grid"><input type="hidden" name="mes" value="{{ mes }}"><label class="field">Categoria<select name="category_id" required>{% for c in category_options %}<option value="{{ c.id }}">{{ c.label }}</option>{% endfor %}</select></label><label class="field">Valor mensal (R$)<input name="amount" inputmode="decimal" placeholder="0,00" required></label></div><div class="form-actions"><button class="button" type="submit">Salvar orçamento</button></div></form>
-<section class="panel"><div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Orçamento</th><th>Realizado</th><th>Uso</th><th></th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.label }}</td><td>{{ row.budget.amount_cents|brl }}</td><td>{{ row.spent|brl }}</td><td><div class="budget-cell"><div class="progress"><span class="{% if row.over %}over{% endif %}" style="width:{{ row.percent if row.percent < 100 else 100 }}%"></span></div><small class="{% if row.over %}danger-text{% endif %}">{{ row.percent }}%{% if row.over %} · excedido{% endif %}</small></div></td><td><form method="post" action="/orcamento/{{ row.budget.id }}/excluir" onsubmit="return confirm('Excluir este orçamento?')"><button class="text-button danger-text">Excluir</button></form></td></tr>{% else %}<tr><td colspan="5" class="empty-cell">Nenhum orçamento cadastrado neste mês.</td></tr>{% endfor %}</tbody></table></div></section>
+<form class="panel form-panel" method="post" action="/orcamento"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><h2>Definir orçamento por categoria</h2><div class="form-grid"><input type="hidden" name="mes" value="{{ mes }}"><label class="field">Categoria<select name="category_id" required>{% for c in category_options %}<option value="{{ c.id }}">{{ c.label }}</option>{% endfor %}</select></label><label class="field">Valor mensal (R$)<input name="amount" inputmode="decimal" placeholder="0,00" required></label></div><div class="form-actions"><button class="button" type="submit">Salvar orçamento</button></div></form>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Orçamento</th><th>Realizado</th><th>Uso</th><th></th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.label }}</td><td>{{ row.budget.amount_cents|brl }}</td><td>{{ row.spent|brl }}</td><td><div class="budget-cell"><div class="progress"><span class="{% if row.over %}over{% endif %}" style="width:{{ row.percent if row.percent < 100 else 100 }}%"></span></div><small class="{% if row.over %}danger-text{% endif %}">{{ row.percent }}%{% if row.over %} · excedido{% endif %}</small></div></td><td><form method="post" action="/orcamento/{{ row.budget.id }}/excluir" onsubmit="return confirm('Excluir este orçamento?')"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="text-button danger-text">Excluir</button></form></td></tr>{% else %}<tr><td colspan="5" class="empty-cell">Nenhum orçamento cadastrado neste mês.</td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}
 ````
 
-
 ## `app/templates/cards.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Faturas de cartão · Casa em ordem{% endblock %}
 {% block content %}
@@ -2044,10 +2581,44 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 {% endblock %}
 ````
 
+## `app/templates/change_password.html`
+
+````html
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12352d">
+  <title>Alterar senha · Casa em Ordem</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="auth-body">
+  <main class="auth-wrap">
+    <div class="auth-brand"><span class="brand-mark">R$</span><div><strong>Casa em Ordem</strong><small>Finanças da família</small></div></div>
+    <section class="panel auth-panel">
+      <p class="eyebrow">SEGURANÇA DA CONTA</p>
+      <h1>{% if mandatory %}Crie sua senha{% else %}Alterar senha{% endif %}</h1>
+      {% if mandatory %}<div class="notice error">Esta senha é provisória. Você precisa definir uma nova senha antes de acessar os dados financeiros.</div>{% endif %}
+      {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
+      <p class="muted">Usuário: <strong>{{ username }}</strong>. Use pelo menos 12 caracteres.</p>
+      <form method="post" action="/alterar-senha" class="form-stack">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <label class="field">Senha atual<input name="current_password" type="password" autocomplete="current-password" required></label>
+        <label class="field">Nova senha<input name="new_password" type="password" autocomplete="new-password" minlength="12" required></label>
+        <label class="field">Confirme a nova senha<input name="confirm_password" type="password" autocomplete="new-password" minlength="12" required></label>
+        <button class="button auth-submit" type="submit">Salvar nova senha</button>
+      </form>
+      <form method="post" action="/logout" class="auth-secondary-form"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="text-button" type="submit">Sair</button></form>
+    </section>
+  </main>
+</body>
+</html>
+````
 
 ## `app/templates/dashboard.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Visão geral · Casa em ordem{% endblock %}
 {% block content %}
@@ -2088,15 +2659,14 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 {% endblock %}
 ````
 
-
 ## `app/templates/fixed.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Gastos fixos · Casa em ordem{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">RECORRÊNCIA MENSAL</p><h1>Gastos fixos</h1><p class="muted">Ocorrências são criadas automaticamente até 12 meses à frente. Ajuste um mês específico em Gastos, sem alterar os demais.</p></div></section>
-<form class="panel form-panel" method="post" action="/transacoes/fixos"><h2>Novo gasto recorrente</h2><div class="form-grid">
+<form class="panel form-panel" method="post" action="/transacoes/fixos"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><h2>Novo gasto recorrente</h2><div class="form-grid">
 <label class="field field-wide">Descrição<input name="name" required placeholder="Ex.: mensalidade do colégio"></label><label class="field">Valor mensal (R$)<input name="amount" required inputmode="decimal" placeholder="0,00"></label><label class="field">Dia do mês<input type="number" name="day_of_month" min="1" max="31" value="10" required></label>
 <label class="field">Categoria<select name="category_id" required>{% for c in category_options %}<option value="{{ c.id }}">{{ c.label }}</option>{% endfor %}</select></label><label class="field">Responsável<select name="person_id" required>{% for p in people %}<option value="{{ p.id }}" {% if p.name == 'Família' %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
 <label class="field">Início da vigência<input type="date" name="start_date" value="{{ today.isoformat() }}" required></label><label class="field">Fim da vigência (opcional)<input type="date" name="end_date"></label>
@@ -2104,7 +2674,7 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 </div><div class="form-actions"><button class="button" type="submit">Criar recorrência</button></div></form>
 <section class="section-heading"><div><h2>Recorrências cadastradas</h2><p class="muted">Editar a recorrência afeta a regra, não os lançamentos já gerados.</p></div></section>
 {% if fixed_items %}<div class="stack-list">{% for item in fixed_items %}<details class="panel fixed-item"><summary><span><b>{{ item.name }}</b><small>{{ item.category.name }} · dia {{ item.day_of_month }} · {{ item.person.name }}</small></span><span class="summary-end"><b>{{ item.amount_cents|brl }}</b><span class="status {% if item.active %}status-realizado{% else %}status-cancelado{% endif %}">{% if item.active %}ativa{% else %}inativa{% endif %}</span></span></summary>
-<form method="post" action="/transacoes/fixos/{{ item.id }}/editar" class="form-grid compact-form">
+<form method="post" action="/transacoes/fixos/{{ item.id }}/editar" class="form-grid compact-form"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
 <label class="field field-wide">Descrição<input name="name" required value="{{ item.name }}"></label><label class="field">Valor (R$)<input name="amount" required value="{{ item.amount_cents|brl }}"></label><label class="field">Dia<input name="day_of_month" type="number" min="1" max="31" value="{{ item.day_of_month }}"></label>
 <label class="field">Categoria<select name="category_id">{% for c in category_options %}<option value="{{ c.id }}" {% if c.id == item.category_id %}selected{% endif %}>{{ c.label }}</option>{% endfor %}</select></label><label class="field">Responsável<select name="person_id">{% for p in people %}<option value="{{ p.id }}" {% if p.id == item.person_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
 <label class="field">Início<input name="start_date" type="date" value="{{ item.start_date.isoformat() }}"></label><label class="field">Fim<input name="end_date" type="date" value="{{ item.end_date.isoformat() if item.end_date else '' }}"></label>
@@ -2114,10 +2684,9 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 {% endblock %}
 ````
 
-
 ## `app/templates/history.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Resumo mensal · Casa em ordem{% endblock %}
 {% block content %}
@@ -2133,54 +2702,85 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 {% endblock %}
 ````
 
-
 ## `app/templates/incomes.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Receitas · Casa em ordem{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">ENTRADAS E DESCONTOS</p><h1>Receitas</h1><p class="muted">Plano de saúde, INSS e IR em folha são informativos e não entram novamente nas despesas.</p></div></section>
 <section class="metric-grid metric-grid-two"><article class="metric metric-good"><span>Receitas incluídas no caixa</span><strong>{{ cash_total|brl }}</strong><small>Salários e rendas extras lançados no mês</small></article><article class="metric"><span>Descontos em folha informativos</span><strong>{{ deductions|brl }}</strong><small>Não duplicados como despesa</small></article></section>
 <form class="filter-bar" method="get"><label for="mes">Mês</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button button-light" type="submit">Filtrar</button></form>
-<form class="panel form-panel" method="post" action="/receitas"><h2>Adicionar receita ou desconto</h2><div class="form-grid">
+<form class="panel form-panel" method="post" action="/receitas"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><h2>Adicionar receita ou desconto</h2><div class="form-grid">
 <label class="field">Data<input type="date" name="happened_on" value="{{ today.isoformat() }}" required></label><label class="field">Pessoa<select name="person_id" required>{% for p in people if p.name != 'Família' %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
 <label class="field">Tipo<select name="kind" required><option value="salario">Salário</option><option value="extra">Renda extra</option><optgroup label="Desconto em folha"><option value="plano_saude">Plano de saúde</option><option value="inss">INSS</option><option value="ir">IR</option><option value="vale">Vale</option><option value="outros_desconto">Outros</option></optgroup><option value="vale">Vale descontado em folha</option><option value="outros_desconto">Outros descontos em folha</option></select></label>
 <label class="field">Valor (R$)<input name="amount" inputmode="decimal" placeholder="0,00" required></label><label class="field field-wide">Descrição (opcional)<input name="description" placeholder="Ex.: salário de outubro, freela de fim de semana"></label>
 </div><div class="form-actions"><button class="button" type="submit">Salvar lançamento</button></div></form>
 <section class="section-heading"><div><h2>Lançamentos de {{ mes[5:7] }}/{{ mes[:4] }}</h2></div></section>
-<div class="panel"><div class="table-wrap"><table><thead><tr><th>Data</th><th>Pessoa</th><th>Tipo / descrição</th><th>Tratamento</th><th>Valor</th><th></th></tr></thead><tbody>{% for item in rows %}<tr><td>{{ item.happened_on|date_br }}</td><td>{{ item.person.name }}</td><td>{{ kinds[item.kind] }}<small class="subline">{{ item.description }}</small></td><td>{% if item.included_in_cashflow %}<span class="status status-realizado">No fluxo</span>{% else %}<span class="status status-previsto">Informativo</span>{% endif %}</td><td class="money">{{ item.amount_cents|brl }}</td><td><form method="post" action="/receitas/{{ item.id }}/excluir" onsubmit="return confirm('Excluir este lançamento?')"><button class="text-button danger-text" type="submit">Excluir</button></form></td></tr>{% else %}<tr><td class="empty-cell" colspan="6">Nenhum lançamento neste mês.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Data</th><th>Pessoa</th><th>Tipo / descrição</th><th>Tratamento</th><th>Valor</th><th></th></tr></thead><tbody>{% for item in rows %}<tr><td>{{ item.happened_on|date_br }}</td><td>{{ item.person.name }}</td><td>{{ kinds[item.kind] }}<small class="subline">{{ item.description }}</small></td><td>{% if item.included_in_cashflow %}<span class="status status-realizado">No fluxo</span>{% else %}<span class="status status-previsto">Informativo</span>{% endif %}</td><td class="money">{{ item.amount_cents|brl }}</td><td><form method="post" action="/receitas/{{ item.id }}/excluir" onsubmit="return confirm('Excluir este lançamento?')"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="text-button danger-text" type="submit">Excluir</button></form></td></tr>{% else %}<tr><td class="empty-cell" colspan="6">Nenhum lançamento neste mês.</td></tr>{% endfor %}</tbody></table></div></div>
 {% endblock %}
 ````
 
+## `app/templates/login.html`
+
+````html
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12352d">
+  <title>Entrar · Casa em Ordem</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="auth-body">
+  <main class="auth-wrap">
+    <div class="auth-brand"><span class="brand-mark">R$</span><div><strong>Casa em Ordem</strong><small>Finanças da família</small></div></div>
+    <section class="panel auth-panel">
+      <p class="eyebrow">ÁREA PROTEGIDA</p>
+      <h1>Entrar</h1>
+      <p class="muted">Informe seu usuário e sua senha para continuar.</p>
+      {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
+      {% if request.query_params.get('ok') == 'logout' %}<div class="notice success">Você saiu da aplicação.</div>{% endif %}
+      <form method="post" action="/login" class="form-stack">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="next_url" value="{{ next_url }}">
+        <label class="field">Usuário<input name="username" autocomplete="username" required autofocus maxlength="32"></label>
+        <label class="field">Senha<input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="button auth-submit" type="submit">Entrar</button>
+      </form>
+      <p class="auth-footnote">A sessão expira após 8 horas de inatividade ou validade.</p>
+    </section>
+  </main>
+</body>
+</html>
+````
 
 ## `app/templates/partials/upcoming_rows.html`
 
-````text
+````html
 {% if rows %}
 <div class="upcoming-list">{% for item in rows %}<div class="upcoming-item"><div class="upcoming-date"><b>{{ item.cashflow_date.strftime('%d') }}</b><small>{{ item.cashflow_date.strftime('%m/%Y') }}</small></div><div class="upcoming-detail"><b>{{ item.description }}</b><small>{{ item.person.name }} · {% if item.card %}{{ item.card.name }}{% elif item.account %}{{ item.account.name }}{% else %}Sem conta/cartão{% endif %}</small><small>{{ item.category.name }}</small></div><div class="upcoming-value"><b>{{ item.amount_cents|brl }}</b><span class="status status-{{ item.status }}">{{ item.status }}</span></div></div>{% endfor %}</div>
 {% else %}<div class="empty-state">Nenhum vencimento previsto para os próximos 45 dias.</div>{% endif %}
 ````
 
-
 ## `app/templates/planned.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Gastos planejados · Casa em ordem{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">PREVISÃO</p><h1>Gastos planejados</h1><p class="muted">Marque como realizado quando pago/confirmado, edite ou cancele o compromisso.</p></div><a class="button" href="/transacoes/nova?tipo=previsto">+ Planejar gasto</a></section>
 <section class="panel"><div class="table-wrap"><table><thead><tr><th>Data de caixa</th><th>Descrição</th><th>Categoria / responsável</th><th>Pagamento</th><th>Valor</th><th>Ações</th></tr></thead><tbody>
-{% for item in rows %}<tr><td>{{ item.cashflow_date|date_br }}</td><td>{{ item.description }}{% if item.installment_number %}<small class="subline">Parcela {{ item.installment_number }}/{{ item.installment_count }}</small>{% endif %}</td><td>{{ item.category.name }}<small class="subline">{{ item.person.name }}</small></td><td>{% if item.card %}{{ item.card.name }}{% elif item.account %}{{ item.account.name }}{% else %}Dinheiro/outro{% endif %}</td><td class="money">{{ item.amount_cents|brl }}</td><td><div class="action-stack"><form method="post" action="/transacoes/{{ item.id }}/status"><input type="hidden" name="status" value="realizado"><button class="button button-small" type="submit">Marcar pago</button></form><a class="button button-light button-small" href="/transacoes/{{ item.id }}/editar">Editar</a><form method="post" action="/transacoes/{{ item.id }}/cancelar" onsubmit="return confirm('Cancelar este lançamento?')"><button class="button button-danger button-small" type="submit">Cancelar</button></form></div></td></tr>
+{% for item in rows %}<tr><td>{{ item.cashflow_date|date_br }}</td><td>{{ item.description }}{% if item.installment_number %}<small class="subline">Parcela {{ item.installment_number }}/{{ item.installment_count }}</small>{% endif %}</td><td>{{ item.category.name }}<small class="subline">{{ item.person.name }}</small></td><td>{% if item.card %}{{ item.card.name }}{% elif item.account %}{{ item.account.name }}{% else %}Dinheiro/outro{% endif %}</td><td class="money">{{ item.amount_cents|brl }}</td><td><div class="action-stack"><form method="post" action="/transacoes/{{ item.id }}/status"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><input type="hidden" name="status" value="realizado"><button class="button button-small" type="submit">Marcar pago</button></form><a class="button button-light button-small" href="/transacoes/{{ item.id }}/editar">Editar</a><form method="post" action="/transacoes/{{ item.id }}/cancelar" onsubmit="return confirm('Cancelar este lançamento?')"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="button button-danger button-small" type="submit">Cancelar</button></form></div></td></tr>
 {% else %}<tr><td colspan="6" class="empty-cell">Nenhum gasto com status previsto.</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% endblock %}
 ````
 
-
 ## `app/templates/projection.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Projeção · Casa em ordem{% endblock %}
 {% block content %}
@@ -2190,40 +2790,39 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 {% endblock %}
 ````
 
-
 ## `app/templates/registrations.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Cadastros · Casa em ordem{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">CONFIGURAÇÃO DA CASA</p><h1>Cadastros</h1><p class="muted">Gerencie pessoas, categorias, contas e cartões usados no dia a dia.</p></div></section>
 <div class="registration-grid">
 <section class="panel"><h2>Pessoas</h2>
-  <form method="post" action="/cadastros/pessoas" class="inline-form"><input name="name" required maxlength="80" placeholder="Nome da pessoa"><button class="button button-small">Adicionar</button></form>
+  <form method="post" action="/cadastros/pessoas" class="inline-form"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><input name="name" required maxlength="80" placeholder="Nome da pessoa"><button class="button button-small">Adicionar</button></form>
   <div class="simple-list">{% for p in all_people %}<div class="registration-row people-row">
-    <form method="post" action="/cadastros/pessoas/{{ p.id }}/editar" class="registration-edit-form">
+    <form method="post" action="/cadastros/pessoas/{{ p.id }}/editar" class="registration-edit-form"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input name="name" aria-label="Nome de {{ p.name }}" value="{{ p.name }}" required maxlength="80">
       <select name="active" aria-label="Situação de {{ p.name }}"><option value="sim" {% if p.active %}selected{% endif %}>Ativa</option><option value="nao" {% if not p.active %}selected{% endif %}>Inativa</option></select>
       <button class="text-button" type="submit">Salvar</button>
     </form>
-    <form method="post" action="/cadastros/pessoas/{{ p.id }}/excluir" onsubmit="return confirm('Excluir/inativar {{ p.name }}? Se houver histórico, a pessoa será preservada como inativa.')"><button class="text-button danger-text" type="submit">Excluir</button></form>
+    <form method="post" action="/cadastros/pessoas/{{ p.id }}/excluir" onsubmit="return confirm('Excluir/inativar {{ p.name }}? Se houver histórico, a pessoa será preservada como inativa.')"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="text-button danger-text" type="submit">Excluir</button></form>
   </div>{% endfor %}</div>
   <p class="muted compact-copy">Se a pessoa tiver lançamentos relacionados, será inativada para preservar o histórico.</p>
 </section>
 <section class="panel"><h2>Categorias e subcategorias</h2>
-  <form method="post" action="/cadastros/categorias" class="form-stack"><label class="field">Nome<input name="name" required maxlength="100" placeholder="Ex.: Material escolar"></label>
+  <form method="post" action="/cadastros/categorias" class="form-stack"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><label class="field">Nome<input name="name" required maxlength="100" placeholder="Ex.: Material escolar"></label>
     <label class="field">Categoria principal<select name="parent_id"><option value="">Criar categoria principal</option>{% for c in all_categories if not c.parent_id and c.active %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
     <button class="button button-small" type="submit">Adicionar categoria</button>
   </form>
   <div class="simple-list">{% for c in all_categories if c.active %}<div class="registration-row category-row"><span>{% if c.parent %}↳ {{ c.parent.name }} / {% endif %}{{ c.name }}</span>
-    <form method="post" action="/cadastros/categorias/{{ c.id }}/excluir" onsubmit="return confirm('Excluir a categoria {{ c.name }}?')"><button class="text-button danger-text" type="submit">Excluir</button></form>
+    <form method="post" action="/cadastros/categorias/{{ c.id }}/excluir" onsubmit="return confirm('Excluir a categoria {{ c.name }}?')"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="text-button danger-text" type="submit">Excluir</button></form>
   </div>{% endfor %}</div>
   <details class="inactive-list"><summary>Mostrar categorias excluídas/inativas</summary><div class="simple-list">{% for c in all_categories if not c.active %}<div class="registration-row category-row"><span>{% if c.parent %}↳ {{ c.parent.name }} / {% endif %}{{ c.name }}<small>Inativa · histórico preservado</small></span></div>{% else %}<p class="muted">Nenhuma categoria inativa.</p>{% endfor %}</div></details>
   <p class="muted compact-copy">Lazer fica sem subcategorias: use o campo de descrição do gasto para detalhar. Categorias excluídas saem dos novos lançamentos, preservando relatórios antigos.</p>
 </section>
 <section class="panel"><h2>Contas e carteiras</h2>
-  <form method="post" action="/cadastros/contas" class="form-stack"><label class="field">Nome<input name="name" required placeholder="Ex.: Conta principal"></label>
+  <form method="post" action="/cadastros/contas" class="form-stack"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><label class="field">Nome<input name="name" required placeholder="Ex.: Conta principal"></label>
     <label class="field">Tipo<select name="kind"><option value="corrente">Conta corrente</option><option value="poupanca">Poupança</option><option value="dinheiro">Dinheiro/carteira</option><option value="outro">Outra</option></select></label>
     <label class="field">Responsável<select name="person_id"><option value="">Família/compartilhada</option>{% for p in people %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
     <label class="field">Saldo inicial (R$)<input name="initial_balance" value="0,00" inputmode="decimal"></label><button class="button button-small" type="submit">Adicionar conta</button>
@@ -2231,7 +2830,7 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
   <div class="simple-list">{% for a in all_accounts %}<div><span>{{ a.name }}<small>{{ a.kind }}{% if a.person %} · {{ a.person.name }}{% endif %}</small></span><b>{{ a.initial_balance_cents|brl }}</b></div>{% else %}<p class="muted">Nenhuma conta cadastrada.</p>{% endfor %}</div>
 </section>
 <section class="panel"><h2>Cartões e vales</h2>
-  <form method="post" action="/cadastros/cartoes" class="form-stack" id="card-registration-form">
+  <form method="post" action="/cadastros/cartoes" class="form-stack" id="card-registration-form"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label class="field">Nome do cartão<input name="name" required placeholder="Ex.: Visa principal"></label>
     <label class="field">Titular<select name="owner_id" required>{% for p in people if p.name != 'Família' and p.active %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
     <label class="field">Tipo<select name="kind" id="registration-card-kind"><option value="credito">Cartão de crédito</option><option value="debito">Cartão de débito</option><option value="vale_alimentacao">Vale Alimentação (débito)</option></select></label>
@@ -2260,10 +2859,9 @@ document.addEventListener('DOMContentLoaded', function () {
 {% endblock %}
 ````
 
-
 ## `app/templates/reports.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Relatórios e backup · Casa em ordem{% endblock %}
 {% block content %}
@@ -2273,10 +2871,9 @@ document.addEventListener('DOMContentLoaded', function () {
 {% endblock %}
 ````
 
-
 ## `app/templates/savings.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Poupança · Casa em ordem{% endblock %}
 {% block content %}
@@ -2286,14 +2883,14 @@ document.addEventListener('DOMContentLoaded', function () {
   <article class="metric"><span>Poupanças cadastradas</span><strong>{{ savings_accounts|length }}</strong><small>Podem existir várias poupanças por pessoa</small></article>
 </section>
 <div class="registration-grid savings-top-grid">
-  <section class="panel"><h2>Criar poupança</h2><form method="post" action="/poupanca/contas" class="form-stack">
+  <section class="panel"><h2>Criar poupança</h2><form method="post" action="/poupanca/contas" class="form-stack"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label class="field">Nome / objetivo<input name="name" required maxlength="120" placeholder="Ex.: Reserva de emergência"></label>
     <label class="field">Pessoa titular<select name="person_id" required>{% for person in people if person.name != 'Família' %}<option value="{{ person.id }}">{{ person.name }}</option>{% endfor %}</select></label>
     <label class="field">Capital inicial (R$)<input name="initial_balance" value="0,00" inputmode="decimal" required><small class="muted">Informe 0,00 se estiver começando agora.</small></label>
     <button class="button button-small" type="submit">Criar poupança</button>
   </form></section>
   <section class="panel"><h2>Adicionar depósito ou retirada</h2><p class="muted compact-copy">Escolha a poupança e registre uma movimentação. Retiradas não podem superar o saldo disponível.</p>
-    {% if savings_accounts %}<form method="post" action="/poupanca/movimentos" class="form-stack" id="general-savings-movement">
+    {% if savings_accounts %}<form method="post" action="/poupanca/movimentos" class="form-stack" id="general-savings-movement"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <label class="field">Poupança<select name="account_id" id="movement-account" required>{% for account in savings_accounts %}<option value="{{ account.id }}">{{ account.name }} · {{ account.person.name }}</option>{% endfor %}</select></label>
       <label class="field">Tipo<select name="kind" required><option value="deposito">Depósito</option><option value="retirada">Retirada</option></select></label>
       <label class="field">Data<input name="happened_on" type="date" value="{{ today.isoformat() }}" required></label>
@@ -2309,7 +2906,7 @@ document.addEventListener('DOMContentLoaded', function () {
   <div class="savings-card-head"><div><p class="eyebrow">{{ item.account.person.name }}</p><h3>{{ item.account.name }}</h3></div><span class="status status-realizado">Ativa</span></div>
   <strong class="savings-balance">{{ item.balance|brl }}</strong>
   <small class="muted">Capital inicial: {{ item.account.initial_balance_cents|brl }}</small>
-  <form method="post" action="/poupanca/movimentos" class="interest-form">
+  <form method="post" action="/poupanca/movimentos" class="interest-form"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="account_id" value="{{ item.account.id }}"><input type="hidden" name="kind" value="juros">
     <label class="field">Data do rendimento<input name="happened_on" type="date" value="{{ today.isoformat() }}" required></label>
     <label class="field">Retorno de juros da aplicação (R$)<input name="amount" inputmode="decimal" placeholder="0,00" required></label>
@@ -2327,15 +2924,14 @@ document.addEventListener('DOMContentLoaded', function () {
 {% endblock %}
 ````
 
-
 ## `app/templates/transaction_form.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}{{ title }} · Casa em ordem{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">MOVIMENTAÇÃO</p><h1>{{ title }}</h1><p class="muted">Valores em reais; parcelamento gera uma linha por fatura de crédito.</p></div><a class="button button-light" href="/transacoes">Voltar</a></section>
-<form class="panel form-panel" method="post" action="{{ form_action }}">
+<form class="panel form-panel" method="post" action="{{ form_action }}"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <div class="form-grid">
     <label class="field field-wide">Descrição<input name="description" required maxlength="240" value="{{ transaction.description if transaction else '' }}" placeholder="Ex.: supermercado, material escolar"></label>
     <label class="field">Valor total (R$)<input name="amount" required inputmode="decimal" placeholder="0,00" value="{{ transaction.amount_cents|brl if transaction else '' }}"></label>
@@ -2368,10 +2964,9 @@ document.addEventListener('DOMContentLoaded', function () {
 {% endblock %}
 ````
 
-
 ## `app/templates/transactions.html`
 
-````text
+````html
 {% extends "base.html" %}
 {% block title %}Gastos · Casa em ordem{% endblock %}
 {% block content %}
@@ -2385,42 +2980,164 @@ document.addEventListener('DOMContentLoaded', function () {
 {% endblock %}
 ````
 
+## `app/templates/users.html`
 
-## `docker-compose.yml`
-
-````text
-services:
-  familia-financas:
-    build: .
-    container_name: familia-financas
-    ports:
-      - "8080:8080"
-    volumes:
-      - familia_financas_data:/data
-    environment:
-      TZ: America/Cuiaba
-      DATABASE_URL: sqlite:////data/financas.db
-    restart: unless-stopped
-volumes:
-  familia_financas_data:
+````html
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12352d">
+  <title>Usuários · Casa em Ordem</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script defer src="/static/js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Página inicial"><span class="brand-mark">R$</span><span>Casa em ordem<small>Finanças da família</small></span></a>
+    <div class="top-actions"><a class="top-action" href="/alterar-senha">Alterar senha</a><form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="top-action" type="submit">Sair</button></form></div>
+  </header>
+  <nav class="nav-grid" aria-label="Navegação principal"><a class="nav-item" href="/">Visão geral</a><a class="nav-item" href="/cadastros">Cadastros</a><a class="nav-item active" href="/usuarios">Usuários</a></nav>
+  <main class="container">
+    {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
+    {% if ok %}<div class="notice success">Usuário criado. Ele deverá trocar a senha no primeiro acesso.</div>{% endif %}
+    <div class="page-head"><div><p class="eyebrow">ADMINISTRAÇÃO</p><h1>Usuários</h1><p class="muted">Somente o Admin pode criar contas. Novos usuários precisam trocar a senha no primeiro acesso.</p></div></div>
+    <section class="panel auth-user-form">
+      <h2>Criar usuário</h2>
+      <form method="post" action="/usuarios" class="form-grid">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <label class="field">Nome de usuário<input name="username" required minlength="3" maxlength="32" autocomplete="off" pattern="[A-Za-z0-9_.-]{3,32}"><small class="subline">3–32 caracteres: letras, números, ponto, hífen ou sublinhado.</small></label>
+        <label class="field">Senha provisória<input name="password" type="password" required minlength="12" autocomplete="new-password"></label>
+        <label class="field">Confirme a senha<input name="confirm_password" type="password" required minlength="12" autocomplete="new-password"></label>
+        <div class="form-actions"><button class="button" type="submit">Criar usuário</button></div>
+      </form>
+    </section>
+    <section class="panel section-gap">
+      <h2>Contas cadastradas</h2>
+      <div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Estado</th><th>Criado em</th></tr></thead><tbody>
+      {% for user in users %}<tr><td>{{ user.username }}{% if user.id == current_user.id %}<small class="subline">Sua conta</small>{% endif %}</td><td>{% if user.is_admin %}Administrador{% else %}Usuário{% endif %}</td><td>{% if not user.is_active %}Inativo{% elif user.must_change_password %}Troca de senha pendente{% else %}Ativo{% endif %}</td><td>{{ user.created_at.strftime('%d/%m/%Y') }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+  </main>
+  <footer class="footer">Dados guardados no banco local · Acesso administrativo</footer>
+</body>
+</html>
 ````
 
+## `tests/test_auth_flow.py`
 
-## `requirements.txt`
+````python
+"""Teste integrado de login, troca obrigatória de senha e controle de CSRF."""
+import os
+import re
+import tempfile
+import unittest
+from pathlib import Path
 
-````text
-fastapi==0.115.12
-uvicorn[standard]==0.34.2
-SQLAlchemy==2.0.40
-Jinja2==3.1.6
-python-multipart==0.0.20
-pydantic==2.11.4
+_TEST_ROOT = Path(tempfile.mkdtemp(prefix="casa-em-ordem-auth-test-"))
+os.environ["DATABASE_URL"] = f"sqlite:////{str(_TEST_ROOT / 'test.db').lstrip('/')}"
+os.environ["SESSION_SECRET_FILE"] = str(_TEST_ROOT / "session_secret.key")
+os.environ["COOKIE_SECURE"] = "false"
+
+from fastapi.testclient import TestClient  # noqa: E402
+from app.main import app  # noqa: E402
+
+
+def csrf_token(html: str) -> str:
+    match = re.search(r'name="_csrf" value="([^"]+)"', html)
+    if not match:
+        raise AssertionError("Token CSRF não encontrado no formulário")
+    return match.group(1)
+
+
+class AuthenticationFlowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.client_context = TestClient(app)
+        cls.client = cls.client_context.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client_context.__exit__(None, None, None)
+
+    def test_admin_login_password_rotation_csrf_and_new_user(self):
+        # A aplicação exige autenticação antes de exibir o dashboard.
+        response = self.client.get("/", follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.headers["location"].startswith("/login"))
+
+        response = self.client.get("/login")
+        self.assertEqual(response.status_code, 200)
+        token = csrf_token(response.text)
+        response = self.client.post("/login", data={
+            "username": "Admin", "password": "admin", "next_url": "/", "_csrf": token,
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("/alterar-senha", response.headers["location"])
+
+        response = self.client.get("/alterar-senha")
+        self.assertEqual(response.status_code, 200)
+        token = csrf_token(response.text)
+        response = self.client.post("/alterar-senha", data={
+            "current_password": "admin",
+            "new_password": "SenhaSeguraCasa2026!",
+            "confirm_password": "SenhaSeguraCasa2026!",
+            "_csrf": token,
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/?ok=1")
+        self.assertEqual(self.client.get("/").status_code, 200)
+
+        # Um POST sem token CSRF é bloqueado mesmo com uma sessão autenticada.
+        response = self.client.post("/usuarios", data={
+            "username": "sem-token", "password": "SenhaSeguraUsuario2026!",
+            "confirm_password": "SenhaSeguraUsuario2026!",
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 403)
+
+        response = self.client.get("/usuarios")
+        self.assertEqual(response.status_code, 200)
+        token = csrf_token(response.text)
+        response = self.client.post("/usuarios", data={
+            "username": "esposa",
+            "password": "PrimeiraSenha2026!",
+            "confirm_password": "PrimeiraSenha2026!",
+            "_csrf": token,
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("/usuarios?ok=1", response.headers["location"])
+
+        response = self.client.post("/logout", data={"_csrf": token}, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        response = self.client.get("/login")
+        token = csrf_token(response.text)
+        response = self.client.post("/login", data={
+            "username": "esposa", "password": "PrimeiraSenha2026!", "next_url": "/", "_csrf": token,
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("/alterar-senha", response.headers["location"])
+        response = self.client.get("/alterar-senha")
+        token = csrf_token(response.text)
+        response = self.client.post("/alterar-senha", data={
+            "current_password": "PrimeiraSenha2026!",
+            "new_password": "OutraSenhaSegura2026!",
+            "confirm_password": "OutraSenhaSegura2026!",
+            "_csrf": token,
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        response = self.client.get("/usuarios", follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.headers["location"].startswith("/?erro="))
+
+
+if __name__ == "__main__":
+    unittest.main()
 ````
-
 
 ## `tests/test_services.py`
 
-````text
+````python
 import unittest
 from datetime import date
 from sqlalchemy import create_engine, select

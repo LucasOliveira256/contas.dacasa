@@ -13,7 +13,10 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Página inicial"><span class="brand-mark">R$</span><span>Casa em ordem<small>Finanças da família</small></span></a>
-    <span class="top-date">{{ today.strftime('%d/%m/%Y') }}</span>
+    <div class="top-actions">
+      <span class="top-date">{{ today.strftime('%d/%m/%Y') }}</span>
+      {% if current_user %}<a class="top-action" href="/alterar-senha">{{ current_user.username }}</a>{% if current_user.is_admin %}<a class="top-action" href="/usuarios">Usuários</a>{% endif %}<form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="top-action" type="submit">Sair</button></form>{% endif %}
+    </div>
   </header>
   <nav class="nav-grid" aria-label="Navegação principal">
     <a class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}" href="/">Visão geral</a>
@@ -28,6 +31,7 @@
     <a class="nav-item {% if active_nav == 'historico' %}active{% endif %}" href="/historico">Histórico</a>
     <a class="nav-item {% if active_nav == 'relatorios' %}active{% endif %}" href="/relatorios">Relatórios</a>
     <a class="nav-item {% if active_nav == 'cadastros' %}active{% endif %}" href="/cadastros">Cadastros</a>
+    {% if current_user and current_user.is_admin %}<a class="nav-item {% if request.url.path.startswith('/usuarios') %}active{% endif %}" href="/usuarios">Usuários</a>{% endif %}
   </nav>
   <main class="container">
     {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}

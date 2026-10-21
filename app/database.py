@@ -45,5 +45,11 @@ def migrate_database() -> None:
         if "kind" not in columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE credit_cards ADD COLUMN kind VARCHAR(30) NOT NULL DEFAULT 'credito'"))
-    # create_all adiciona as novas tabelas de poupança sem alterar tabelas antigas.
+    # Permite invalidar sessões antigas ao trocar a senha.
+    if "users" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("users")}
+        if "session_version" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"))
+    # create_all adiciona tabelas novas sem alterar os dados financeiros antigos.
     Base.metadata.create_all(bind=engine)

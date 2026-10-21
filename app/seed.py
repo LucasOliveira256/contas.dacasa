@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from .models import Person, Category
+from .models import Person, Category, User
+from .security import hash_password
 
 PEOPLE = ["Marido", "Esposa", "Família"]
 CATEGORIES = {
@@ -40,6 +41,14 @@ def seed_database(db: Session) -> None:
     if not db.scalar(select(Person.id).limit(1)):
         for name in PEOPLE:
             db.add(Person(name=name))
+        db.flush()
+    # Cria Admin/admin apenas no primeiro boot; o primeiro login exige troca imediata.
+    if not db.scalar(select(User.id).limit(1)):
+        admin_name = "Admin"
+        admin_password = "admin"
+        db.add(User(username=admin_name, username_key=admin_name.casefold(),
+                    password_hash=hash_password(admin_password), is_admin=True,
+                    is_active=True, must_change_password=True))
         db.flush()
     _migrate_lazer_categories(db)
     roots = {c.name: c for c in db.scalars(select(Category).where(Category.parent_id.is_(None))).all()}

@@ -7,14 +7,14 @@
   <article class="metric"><span>Poupanças cadastradas</span><strong>{{ savings_accounts|length }}</strong><small>Podem existir várias poupanças por pessoa</small></article>
 </section>
 <div class="registration-grid savings-top-grid">
-  <section class="panel"><h2>Criar poupança</h2><form method="post" action="/poupanca/contas" class="form-stack">
+  <section class="panel"><h2>Criar poupança</h2><form method="post" action="/poupanca/contas" class="form-stack"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label class="field">Nome / objetivo<input name="name" required maxlength="120" placeholder="Ex.: Reserva de emergência"></label>
     <label class="field">Pessoa titular<select name="person_id" required>{% for person in people if person.name != 'Família' %}<option value="{{ person.id }}">{{ person.name }}</option>{% endfor %}</select></label>
     <label class="field">Capital inicial (R$)<input name="initial_balance" value="0,00" inputmode="decimal" required><small class="muted">Informe 0,00 se estiver começando agora.</small></label>
     <button class="button button-small" type="submit">Criar poupança</button>
   </form></section>
   <section class="panel"><h2>Adicionar depósito ou retirada</h2><p class="muted compact-copy">Escolha a poupança e registre uma movimentação. Retiradas não podem superar o saldo disponível.</p>
-    {% if savings_accounts %}<form method="post" action="/poupanca/movimentos" class="form-stack" id="general-savings-movement">
+    {% if savings_accounts %}<form method="post" action="/poupanca/movimentos" class="form-stack" id="general-savings-movement"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <label class="field">Poupança<select name="account_id" id="movement-account" required>{% for account in savings_accounts %}<option value="{{ account.id }}">{{ account.name }} · {{ account.person.name }}</option>{% endfor %}</select></label>
       <label class="field">Tipo<select name="kind" required><option value="deposito">Depósito</option><option value="retirada">Retirada</option></select></label>
       <label class="field">Data<input name="happened_on" type="date" value="{{ today.isoformat() }}" required></label>
@@ -30,7 +30,7 @@
   <div class="savings-card-head"><div><p class="eyebrow">{{ item.account.person.name }}</p><h3>{{ item.account.name }}</h3></div><span class="status status-realizado">Ativa</span></div>
   <strong class="savings-balance">{{ item.balance|brl }}</strong>
   <small class="muted">Capital inicial: {{ item.account.initial_balance_cents|brl }}</small>
-  <form method="post" action="/poupanca/movimentos" class="interest-form">
+  <form method="post" action="/poupanca/movimentos" class="interest-form"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="account_id" value="{{ item.account.id }}"><input type="hidden" name="kind" value="juros">
     <label class="field">Data do rendimento<input name="happened_on" type="date" value="{{ today.isoformat() }}" required></label>
     <label class="field">Retorno de juros da aplicação (R$)<input name="amount" inputmode="decimal" placeholder="0,00" required></label>
