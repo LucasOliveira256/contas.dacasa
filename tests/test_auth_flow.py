@@ -12,6 +12,8 @@ os.environ["COOKIE_SECURE"] = "false"
 
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
+from app.database import SessionLocal  # noqa: E402
+from app.models import Person, CreditCard  # noqa: E402
 
 
 def csrf_token(html: str) -> str:
@@ -57,7 +59,32 @@ class AuthenticationFlowTests(unittest.TestCase):
         }, follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/?ok=1")
-        self.assertEqual(self.client.get("/").status_code, 200)
+        dashboard = self.client.get("/")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn('id="chart-cashflow"', dashboard.text)
+        self.assertIn('class="sidebar"', dashboard.text)
+        self.assertIn('data-theme="dark"', dashboard.text)
+
+        # O cadastro armazena apenas os quatro últimos dígitos, exibidos no cartão visual.
+        db = SessionLocal()
+        try:
+            husband = db.query(Person).filter(Person.name == "Marido").first()
+            husband_id = husband.id
+        finally:
+            db.close()
+        registration = self.client.get("/cadastros")
+        token = csrf_token(registration.text)
+        response = self.client.post("/cadastros/cartoes", data={
+            "_csrf": token, "name": "Nubank Roxinho", "owner_id": str(husband_id),
+            "kind": "credito", "closing_day": "10", "due_day": "17",
+            "limit": "1500,00", "last_four_digits": "4821", "payment_account_id": "",
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        card_page = self.client.get("/cartoes")
+        self.assertEqual(card_page.status_code, 200)
+        self.assertIn("bank-card-nubank", card_page.text)
+        self.assertIn("4821", card_page.text)
+        self.assertIn("Entradas x saídas", dashboard.text)
 
         # Um POST sem token CSRF é bloqueado mesmo com uma sessão autenticada.
         response = self.client.post("/usuarios", data={

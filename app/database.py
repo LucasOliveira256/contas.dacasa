@@ -42,9 +42,11 @@ def migrate_database() -> None:
     inspector = inspect(engine)
     if "credit_cards" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("credit_cards")}
-        if "kind" not in columns:
-            with engine.begin() as connection:
+        with engine.begin() as connection:
+            if "kind" not in columns:
                 connection.execute(text("ALTER TABLE credit_cards ADD COLUMN kind VARCHAR(30) NOT NULL DEFAULT 'credito'"))
+            if "last_four_digits" not in columns:
+                connection.execute(text("ALTER TABLE credit_cards ADD COLUMN last_four_digits VARCHAR(4) NOT NULL DEFAULT ''"))
     # Permite invalidar sessões antigas ao trocar a senha.
     if "users" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("users")}

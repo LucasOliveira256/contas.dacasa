@@ -1,0 +1,13 @@
+{% set card_name_lc = card.name|lower %}
+{% if 'nubank' in card_name_lc %}{% set card_brand = 'nubank' %}{% set card_issuer = 'Nubank' %}
+{% elif 'santander' in card_name_lc %}{% set card_brand = 'santander' %}{% set card_issuer = 'Santander' %}
+{% elif 'bradesco' in card_name_lc %}{% set card_brand = 'bradesco' %}{% set card_issuer = 'Bradesco' %}
+{% elif 'ticket' in card_name_lc %}{% set card_brand = 'ticket' %}{% set card_issuer = 'Ticket' %}
+{% elif 'clear' in card_name_lc %}{% set card_brand = 'clear' %}{% set card_issuer = 'Clear' %}
+{% else %}{% set card_brand = 'generic' %}{% set card_issuer = 'Cartão' %}{% endif %}
+<article class="bank-card bank-card-{{ card_brand }}">
+  <div class="bank-card-head"><span class="bank-card-issuer">{{ card_issuer }}</span><span class="bank-card-kind">{% if card.kind == 'credito' %}CRÉDITO{% elif card.kind == 'vale_alimentacao' %}VALE ALIMENTAÇÃO{% else %}DÉBITO{% endif %}</span></div>
+  <div class="bank-card-chip" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+  <div class="bank-card-number" aria-label="Final do cartão {{ card.last_four_digits if card.last_four_digits else 'não informado' }}">•••• &nbsp;•••• &nbsp;•••• &nbsp;<strong>{{ card.last_four_digits if card.last_four_digits else '••••' }}</strong></div>
+  <div class="bank-card-foot"><div><small>TITULAR</small><strong>{{ card.owner.name }}</strong></div><div class="bank-card-label"><small>CARTÃO</small><strong>{{ card.name }}</strong></div></div>
+</article>

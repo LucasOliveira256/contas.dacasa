@@ -137,9 +137,13 @@ def create_account(name: str = Form(...), kind: str = Form("corrente"), person_i
 def create_card(
     name: str = Form(...), owner_id: int = Form(...), kind: str = Form("credito"),
     closing_day: int | None = Form(None), due_day: int | None = Form(None),
-    limit: str = Form("0,00"), payment_account_id: str = Form(""), db: Session = Depends(get_db),
+    limit: str = Form("0,00"), payment_account_id: str = Form(""),
+    last_four_digits: str = Form(""), db: Session = Depends(get_db),
 ):
     clean = name.strip()
+    last_four_digits = last_four_digits.strip()
+    if last_four_digits and (len(last_four_digits) != 4 or not last_four_digits.isascii() or not last_four_digits.isdigit()):
+        return RedirectResponse("/cadastros?erro=Informe+somente+os+4+ultimos+digitos+do+cartao", status_code=303)
     if not clean or not db.get(Person, owner_id) or kind not in CARD_KINDS:
         return RedirectResponse("/cadastros?erro=Dados+do+cartão+inválidos", status_code=303)
     try:
@@ -151,7 +155,7 @@ def create_card(
             closing_day, due_day = 0, 0
         db.add(CreditCard(
             name=clean, owner_id=owner_id, kind=kind, closing_day=closing_day or 0, due_day=due_day or 0,
-            limit_cents=parse_brl_to_cents(limit),
+            limit_cents=parse_brl_to_cents(limit), last_four_digits=last_four_digits,
             payment_account_id=int(payment_account_id) if payment_account_id else None,
         ))
         db.commit()
@@ -159,4 +163,17 @@ def create_card(
         db.rollback()
         msg = str(exc) if isinstance(exc, ValueError) else "Não foi possível salvar o cartão"
         return RedirectResponse(f"/cadastros?erro={msg.replace(' ', '+')}", status_code=303)
+    return RedirectResponse("/cadastros?ok=1", status_code=303)
+
+
+@router.post("/cartoes/{card_id}/editar")
+def update_card(card_id: int, last_four_digits: str = Form(""), db: Session = Depends(get_db)):
+    card = db.get(CreditCard, card_id)
+    digits = last_four_digits.strip()
+    if not card:
+        return RedirectResponse("/cadastros?erro=Cartao+nao+encontrado", status_code=303)
+    if digits and (len(digits) != 4 or not digits.isascii() or not digits.isdigit()):
+        return RedirectResponse("/cadastros?erro=Informe+zero+ou+quatro+digitos", status_code=303)
+    card.last_four_digits = digits
+    db.commit()
     return RedirectResponse("/cadastros?ok=1", status_code=303)

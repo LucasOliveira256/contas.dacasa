@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
         db.close()
     yield
 
-app = FastAPI(title="Casa em Ordem", description="Gestão financeira familiar", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Casa em Ordem", description="Gestão financeira familiar", version="1.2.0", lifespan=lifespan)
 # SessionMiddleware fica por fora do middleware de autenticação para validar cookies assinados.
 app.add_middleware(AuthSecurityMiddleware)
 app.add_middleware(

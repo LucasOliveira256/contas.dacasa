@@ -1,17 +1,78 @@
-# Código-fonte completo — Casa em Ordem
+# Casa em Ordem — Código-fonte completo
+Este documento contém os arquivos do projeto integralmente, sem omitir trechos. O projeto executável também está disponível no ZIP.
 
-Projeto com autenticação, controle de usuários, proteção CSRF, senhas Argon2 e SQLite persistente. Cada seção contém o conteúdo integral do arquivo correspondente.
+## `.dockerignore`
+
+```text
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite3
+.venv/
+.git/
+tests/
+
+.env
+.session_secret.key
+```
+
+## `.env.example`
+
+```text
+# Use true em produção, com o sistema acessado por HTTPS.
+COOKIE_SECURE=true
+
+# Se o proxy reverso estiver em outro IP, indique o IP exato dele.
+# Exemplo: FORWARDED_ALLOW_IPS=10.0.0.20
+FORWARDED_ALLOW_IPS=127.0.0.1
+```
+
+## `.gitignore`
+
+```text
+__pycache__/
+*.py[cod]
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+.venv/
+.env
+.session_secret.key
+.pytest_cache/
+```
+
+## `Dockerfile`
+
+```dockerfile
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 TZ=America/Cuiaba DATABASE_URL=sqlite:////data/financas.db
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system app && useradd --system --gid app --home-dir /app app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app ./app
+COPY start.sh /usr/local/bin/start.sh
+RUN chmod 755 /usr/local/bin/start.sh && mkdir -p /data && chown app:app /data
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/start.sh"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
+```
 
 ## `README.md`
 
-````markdown
+```markdown
 # Casa em Ordem — Finanças da Família
 
-Aplicação web para controlar receitas, despesas, cartões, orçamento e poupanças familiares. Executa em um container Docker, com SQLite persistente e interface responsiva em português.
+Aplicação web para controlar receitas, despesas, cartões, orçamento e poupanças familiares. Executa em um container Docker, com SQLite persistente e interface responsiva em português. Interface inspirada em dashboards administrativos modernos, com tema Dark e alternativa Material Light.
 
 ## Funcionalidades
 
-- Dashboard mensal, histórico e projeção de 12 meses.
+- Dashboard mensal com gráfico de linhas de entradas x saídas, histórico e projeção de 12 meses.
+- Menu lateral expansível por hover no desktop e recolhível no celular; tema Dark e Material Light.
+- Cartões visuais com cores por emissor e exibição opcional dos quatro últimos dígitos (o número completo não é armazenado).
 - Receitas, despesas fixas/variáveis/planejadas e parcelamento no crédito.
 - Cartões de crédito, débito e Vale Alimentação.
 - Pessoas, categorias, contas, orçamentos e relatórios.
@@ -68,125 +129,17 @@ docker compose up -d
 ## Licença
 
 Defina a licença desejada antes de publicar o repositório (por exemplo, MIT).
-````
-
-## `.env.example`
-
-````text
-# Use true em produção, com o sistema acessado por HTTPS.
-COOKIE_SECURE=true
-
-# Se o proxy reverso estiver em outro IP, indique o IP exato dele.
-# Exemplo: FORWARDED_ALLOW_IPS=10.0.0.20
-FORWARDED_ALLOW_IPS=127.0.0.1
-````
-
-## `.dockerignore`
-
-````text
-__pycache__/
-*.py[cod]
-*.db
-*.sqlite3
-.venv/
-.git/
-tests/
-
-.env
-.session_secret.key
-````
-
-## `.gitignore`
-
-````text
-__pycache__/
-*.py[cod]
-*.db
-*.db-wal
-*.db-shm
-*.sqlite3
-.venv/
-.env
-.session_secret.key
-.pytest_cache/
-````
-
-## `Dockerfile`
-
-````bash
-FROM python:3.12-slim
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 TZ=America/Cuiaba DATABASE_URL=sqlite:////data/financas.db
-WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata gosu \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system app && useradd --system --gid app --home-dir /app app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app ./app
-COPY start.sh /usr/local/bin/start.sh
-RUN chmod 755 /usr/local/bin/start.sh && mkdir -p /data && chown app:app /data
-EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/start.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
-````
-
-## `docker-compose.yml`
-
-````yaml
-services:
-  familia-financas:
-    build: .
-    container_name: familia-financas
-    ports:
-      - "8080:8080"
-    volumes:
-      - familia_financas_data:/data
-    environment:
-      TZ: America/Cuiaba
-      DATABASE_URL: sqlite:////data/financas.db
-      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
-      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "${FORWARDED_ALLOW_IPS:-127.0.0.1}"]
-    restart: unless-stopped
-volumes:
-  familia_financas_data:
-````
-
-## `requirements.txt`
-
-````text
-fastapi==0.115.12
-uvicorn[standard]==0.34.2
-SQLAlchemy==2.0.40
-Jinja2==3.1.6
-python-multipart==0.0.20
-pydantic==2.11.4
-argon2-cffi==23.1.0
-````
-
-## `start.sh`
-
-````bash
-#!/bin/sh
-set -eu
-# O volume já existia nas versões anteriores, então corrigimos proprietário e permissões ao iniciar.
-mkdir -p /data
-chown -R app:app /data
-chmod 700 /data
-find /data -maxdepth 1 -type f -exec chmod 600 {} \;
-umask 077
-exec gosu app "$@"
-````
+```
 
 ## `app/__init__.py`
 
-````python
+```python
 """Gestão financeira familiar."""
-````
+```
 
 ## `app/auth_middleware.py`
 
-````python
+```python
 """Autenticação obrigatória, CSRF e cabeçalhos básicos de segurança."""
 import os
 import secrets
@@ -329,11 +282,11 @@ class AuthSecurityMiddleware:
                 message["headers"] = headers
             await send(message)
         await response(scope, receive, secure_send)
-````
+```
 
 ## `app/database.py`
 
-````python
+```python
 import os
 from pathlib import Path
 from sqlalchemy import create_engine, event, inspect, text
@@ -378,9 +331,11 @@ def migrate_database() -> None:
     inspector = inspect(engine)
     if "credit_cards" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("credit_cards")}
-        if "kind" not in columns:
-            with engine.begin() as connection:
+        with engine.begin() as connection:
+            if "kind" not in columns:
                 connection.execute(text("ALTER TABLE credit_cards ADD COLUMN kind VARCHAR(30) NOT NULL DEFAULT 'credito'"))
+            if "last_four_digits" not in columns:
+                connection.execute(text("ALTER TABLE credit_cards ADD COLUMN last_four_digits VARCHAR(4) NOT NULL DEFAULT ''"))
     # Permite invalidar sessões antigas ao trocar a senha.
     if "users" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("users")}
@@ -389,11 +344,11 @@ def migrate_database() -> None:
                 connection.execute(text("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"))
     # create_all adiciona tabelas novas sem alterar os dados financeiros antigos.
     Base.metadata.create_all(bind=engine)
-````
+```
 
 ## `app/main.py`
 
-````python
+```python
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -420,7 +375,7 @@ async def lifespan(app: FastAPI):
         db.close()
     yield
 
-app = FastAPI(title="Casa em Ordem", description="Gestão financeira familiar", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Casa em Ordem", description="Gestão financeira familiar", version="1.2.0", lifespan=lifespan)
 # SessionMiddleware fica por fora do middleware de autenticação para validar cookies assinados.
 app.add_middleware(AuthSecurityMiddleware)
 app.add_middleware(
@@ -445,11 +400,11 @@ app.include_router(auth.router)
 @app.get("/healthz", include_in_schema=False)
 def healthz():
     return JSONResponse({"status": "ok"})
-````
+```
 
 ## `app/models.py`
 
-````python
+```python
 from datetime import date, datetime
 from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -505,6 +460,7 @@ class CreditCard(Base):
     closing_day: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     due_day: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     limit_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_four_digits: Mapped[str] = mapped_column(String(4), default="", nullable=False)
     payment_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     owner: Mapped[Person] = relationship()
@@ -608,17 +564,17 @@ class SavingsMovement(Base):
         CheckConstraint("amount_cents > 0", name="ck_savings_movement_positive"),
         CheckConstraint("kind IN ('deposito', 'retirada', 'juros')", name="ck_savings_movement_kind"),
     )
-````
+```
 
 ## `app/routers/__init__.py`
 
-````python
+```python
 """Rotas HTTP da aplicação."""
-````
+```
 
 ## `app/routers/auth.py`
 
-````python
+```python
 """Login, troca de senha e administração de usuários."""
 import re
 import secrets
@@ -793,11 +749,11 @@ def create_user(
                 is_admin=False, is_active=True, must_change_password=True))
     db.commit()
     return RedirectResponse("/usuarios?ok=1", status_code=303)
-````
+```
 
 ## `app/routers/budgets.py`
 
-````python
+```python
 from datetime import date
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -869,11 +825,11 @@ def projection(request: Request, db: Session = Depends(get_db)):
         months.append({"key": month_key(current), "name": current.strftime("%m/%Y"), "income": income,
                        "expenses": expenses, "balance": income-expenses})
     return page(request, db, "projection.html", active_nav="projecao", months=months)
-````
+```
 
 ## `app/routers/cards.py`
 
-````python
+```python
 from collections import defaultdict
 from datetime import date
 from fastapi import APIRouter, Depends, Request
@@ -889,8 +845,9 @@ router = APIRouter(prefix="/cartoes", tags=["cartões"])
 @router.get("")
 def card_invoices(request: Request, mes: str | None = None, cartao: int | None = None, db: Session = Depends(get_db)):
     year, month = parse_month(mes)
-    cards = list(db.scalars(select(CreditCard).where(CreditCard.active.is_(True), CreditCard.kind == "credito").order_by(CreditCard.name)).all())
-    selected_card = next((c for c in cards if c.id == cartao), cards[0] if cards else None)
+    cards = list(db.scalars(select(CreditCard).where(CreditCard.active.is_(True)).order_by(CreditCard.name)).all())
+    credit_cards = [card for card in cards if card.kind == "credito"]
+    selected_card = next((c for c in credit_cards if c.id == cartao), credit_cards[0] if credit_cards else None)
     start, end = month_start(year, month), month_end(year, month)
     items = []
     if selected_card:
@@ -902,16 +859,16 @@ def card_invoices(request: Request, mes: str | None = None, cartao: int | None =
         ).order_by(FinancialTransaction.cashflow_date, FinancialTransaction.id)).all())
     total = sum(t.amount_cents for t in items)
     card_totals = []
-    for card in cards:
+    for card in credit_cards:
         amount = sum(t.amount_cents for t in items if t.card_id == card.id) if selected_card and card.id == selected_card.id else 0
         card_totals.append({"card": card, "amount": amount})
     return page(request, db, "cards.html", active_nav="cartoes", mes=f"{year:04d}-{month:02d}", all_cards=cards,
-                selected_card=selected_card, items=items, total=total, card_totals=card_totals)
-````
+                credit_cards=credit_cards, selected_card=selected_card, items=items, total=total, card_totals=card_totals)
+```
 
 ## `app/routers/common.py`
 
-````python
+```python
 from datetime import date
 from fastapi import Request
 from sqlalchemy import select
@@ -937,11 +894,11 @@ def base_context(request: Request, db: Session, **extra):
 
 def page(request: Request, db: Session, template: str, **extra):
     return templates.TemplateResponse(request=request, name=template, context=base_context(request, db, **extra))
-````
+```
 
 ## `app/routers/dashboard.py`
 
-````python
+```python
 from collections import defaultdict
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Request
@@ -1063,11 +1020,11 @@ def upcoming_partial(request: Request, db: Session = Depends(get_db)):
         FinancialTransaction.status != "cancelado").order_by(FinancialTransaction.cashflow_date).limit(10)).all())
     return templates.TemplateResponse(request=request, name="partials/upcoming_rows.html",
                                       context=base_context(request, db, rows=rows))
-````
+```
 
 ## `app/routers/incomes.py`
 
-````python
+```python
 from datetime import date
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -1115,11 +1072,11 @@ def delete_income(income_id: int, db: Session = Depends(get_db)):
         db.delete(income)
         db.commit()
     return RedirectResponse("/receitas", status_code=303)
-````
+```
 
 ## `app/routers/registrations.py`
 
-````python
+```python
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -1259,9 +1216,13 @@ def create_account(name: str = Form(...), kind: str = Form("corrente"), person_i
 def create_card(
     name: str = Form(...), owner_id: int = Form(...), kind: str = Form("credito"),
     closing_day: int | None = Form(None), due_day: int | None = Form(None),
-    limit: str = Form("0,00"), payment_account_id: str = Form(""), db: Session = Depends(get_db),
+    limit: str = Form("0,00"), payment_account_id: str = Form(""),
+    last_four_digits: str = Form(""), db: Session = Depends(get_db),
 ):
     clean = name.strip()
+    last_four_digits = last_four_digits.strip()
+    if last_four_digits and (len(last_four_digits) != 4 or not last_four_digits.isascii() or not last_four_digits.isdigit()):
+        return RedirectResponse("/cadastros?erro=Informe+somente+os+4+ultimos+digitos+do+cartao", status_code=303)
     if not clean or not db.get(Person, owner_id) or kind not in CARD_KINDS:
         return RedirectResponse("/cadastros?erro=Dados+do+cartão+inválidos", status_code=303)
     try:
@@ -1273,7 +1234,7 @@ def create_card(
             closing_day, due_day = 0, 0
         db.add(CreditCard(
             name=clean, owner_id=owner_id, kind=kind, closing_day=closing_day or 0, due_day=due_day or 0,
-            limit_cents=parse_brl_to_cents(limit),
+            limit_cents=parse_brl_to_cents(limit), last_four_digits=last_four_digits,
             payment_account_id=int(payment_account_id) if payment_account_id else None,
         ))
         db.commit()
@@ -1282,11 +1243,24 @@ def create_card(
         msg = str(exc) if isinstance(exc, ValueError) else "Não foi possível salvar o cartão"
         return RedirectResponse(f"/cadastros?erro={msg.replace(' ', '+')}", status_code=303)
     return RedirectResponse("/cadastros?ok=1", status_code=303)
-````
+
+
+@router.post("/cartoes/{card_id}/editar")
+def update_card(card_id: int, last_four_digits: str = Form(""), db: Session = Depends(get_db)):
+    card = db.get(CreditCard, card_id)
+    digits = last_four_digits.strip()
+    if not card:
+        return RedirectResponse("/cadastros?erro=Cartao+nao+encontrado", status_code=303)
+    if digits and (len(digits) != 4 or not digits.isascii() or not digits.isdigit()):
+        return RedirectResponse("/cadastros?erro=Informe+zero+ou+quatro+digitos", status_code=303)
+    card.last_four_digits = digits
+    db.commit()
+    return RedirectResponse("/cadastros?ok=1", status_code=303)
+```
 
 ## `app/routers/reports.py`
 
-````python
+```python
 import csv
 import io
 import os
@@ -1381,11 +1355,11 @@ def backup_database():
         source.close()
     return FileResponse(temp_path, media_type="application/x-sqlite3", filename=f"backup-financas-{date.today().isoformat()}.db",
                         background=BackgroundTask(lambda: os.path.exists(temp_path) and os.remove(temp_path)))
-````
+```
 
 ## `app/routers/savings.py`
 
-````python
+```python
 from datetime import date
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -1462,11 +1436,11 @@ def create_movement(
         message = str(exc).replace(" ", "+")
         return RedirectResponse(f"/poupanca?erro={message}", status_code=303)
     return RedirectResponse("/poupanca?ok=1", status_code=303)
-````
+```
 
 ## `app/routers/transactions.py`
 
-````python
+```python
 from datetime import date
 from uuid import uuid4
 from fastapi import APIRouter, Depends, Form, Request
@@ -1693,11 +1667,11 @@ def update_fixed(
         except (ValueError, TypeError):
             db.rollback()
     return RedirectResponse("/transacoes/fixos", status_code=303)
-````
+```
 
 ## `app/schemas.py`
 
-````python
+```python
 from datetime import date
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
@@ -1737,11 +1711,11 @@ class FixedExpenseCreate(BaseModel):
     end_date: date | None = None
     account_id: int | None = None
     card_id: int | None = None
-````
+```
 
 ## `app/security.py`
 
-````python
+```python
 """Funções de segurança: hash de senha e segredo persistente de sessão."""
 import os
 import secrets
@@ -1793,11 +1767,11 @@ def session_secret() -> str:
     if len(value) < 32:
         raise RuntimeError(f"Segredo de sessão inválido em {path}; apague-o com a aplicação parada para gerar outro.")
     return value
-````
+```
 
 ## `app/seed.py`
 
-````python
+```python
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .models import Person, Category, User
@@ -1863,17 +1837,17 @@ def seed_database(db: Session) -> None:
             if child_name not in existing_children:
                 db.add(Category(name=child_name, parent_id=root.id))
     db.commit()
-````
+```
 
 ## `app/services/__init__.py`
 
-````python
+```python
 """Regras de negócio."""
-````
+```
 
 ## `app/services/finance.py`
 
-````python
+```python
 import calendar
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -1985,11 +1959,11 @@ def active_transactions_for_month(db: Session, year: int, month: int, by_cashflo
     return list(db.scalars(select(FinancialTransaction).where(
         column >= start, column <= end, FinancialTransaction.status != "cancelado"
     ).order_by(column.desc(), FinancialTransaction.id.desc())).all())
-````
+```
 
 ## `app/services/recurring.py`
 
-````python
+```python
 from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -2034,11 +2008,11 @@ def ensure_fixed_transactions(db: Session, today: date | None = None, months_ahe
     if created:
         db.commit()
     return created
-````
+```
 
 ## `app/services/savings.py`
 
-````python
+```python
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..models import SavingsAccount, SavingsMovement
@@ -2054,11 +2028,11 @@ def savings_balance(db: Session, account: SavingsAccount) -> int:
         elif movement.kind == "retirada":
             balance -= movement.amount_cents
     return balance
-````
+```
 
 ## `app/static/css/app.css`
 
-````css
+```css
 :root {
   --ink: #183b30; --green: #236b56; --green-dark: #174b3b; --green-soft: #e8f3ed;
   --paper: #f5f7f4; --surface: #fff; --muted: #6c7b73; --line: #e0e7e1;
@@ -2350,30 +2324,581 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
   .auth-panel { padding: 19px; }
   .auth-user-form .form-grid { grid-template-columns: minmax(0, 1fr); }
 }
-````
+
+/* Novo shell visual: dark por padrão, com alternativa Material Light. */
+:root {
+  color-scheme: dark;
+  --ink: #edf2f8;
+  --green: #a3e635;
+  --green-dark: #84cc16;
+  --green-soft: rgba(163, 230, 53, .12);
+  --paper: #0b0f14;
+  --surface: #121923;
+  --surface-raised: #18212d;
+  --muted: #91a0b4;
+  --line: #263241;
+  --amber: #fbbf24;
+  --red: #fb7185;
+  --red-soft: rgba(251, 113, 133, .12);
+  --shadow: 0 16px 40px rgba(0, 0, 0, .16);
+  --sidebar-width: 76px;
+  --chart-text: #8b9ab0;
+  --chart-grid: #283444;
+  --chart-income: #45d6a4;
+  --chart-expense: #fb7185;
+  --chart-accent: #a3e635;
+  font-family: "Be Vietnam Pro", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+html[data-theme="light"] {
+  color-scheme: light;
+  --ink: #202939;
+  --green: #4f46e5;
+  --green-dark: #4338ca;
+  --green-soft: #eef2ff;
+  --paper: #f4f6fb;
+  --surface: #ffffff;
+  --surface-raised: #f8faff;
+  --muted: #758096;
+  --line: #e1e6f0;
+  --amber: #b7791f;
+  --red: #dc4862;
+  --red-soft: #fff0f2;
+  --shadow: 0 12px 32px rgba(38, 52, 79, .07);
+  --chart-text: #758096;
+  --chart-grid: #e6eaf2;
+  --chart-income: #0ca678;
+  --chart-expense: #e04f69;
+  --chart-accent: #5b5ce2;
+}
+html, body { width: 100%; min-width: 320px; min-height: 100%; overflow-x: clip; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-size: 13px; line-height: 1.55; }
+* { box-sizing: border-box; }
+a { color: var(--green); transition: color .18s ease; }
+a:hover { color: var(--green-dark); }
+h1, h2, h3, h4, p { margin-top: 0; }
+h1 { color: var(--ink); font-size: clamp(25px, 3vw, 34px); font-weight: 700; line-height: 1.2; letter-spacing: -.8px; margin-bottom: 8px; }
+h2 { color: var(--ink); font-size: 16px; line-height: 1.35; font-weight: 650; letter-spacing: -.3px; margin-bottom: 9px; }
+h3 { color: var(--ink); font-size: 14px; font-weight: 650; }
+.muted { color: var(--muted) !important; }
+.eyebrow { color: var(--green); font-size: 10px; font-weight: 800; letter-spacing: .16em; margin-bottom: 7px; }
+
+/* Navegação lateral recolhida; desktop expande ao hover/foco e pode ser fixada. */
+.nav-grid { display: none !important; }
+.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 60; display: flex; flex-direction: column; width: var(--sidebar-width); padding: 18px 11px 14px; overflow-x: hidden; overflow-y: auto; background: #101720; color: #93a1b5; border-right: 1px solid #202a37; transition: width .22s ease, transform .22s ease, box-shadow .22s ease; scrollbar-width: thin; scrollbar-color: #344155 transparent; }
+html[data-theme="light"] .sidebar { background: #fff; color: #7c879d; border-right-color: #e4e8f0; }
+.sidebar:hover, .sidebar:focus-within, html.sidebar-pinned .sidebar { width: 252px; box-shadow: 12px 0 40px rgba(0, 0, 0, .2); }
+.sidebar-brand { display: flex; align-items: center; min-width: 230px; min-height: 48px; gap: 12px; padding: 2px 6px 17px; margin-bottom: 20px; border-bottom: 1px solid #263241; color: var(--ink); text-decoration: none; }
+html[data-theme="light"] .sidebar-brand { border-bottom-color: #e6eaf2; }
+.sidebar-brand:hover { color: var(--ink); }
+.brand-mark { display: inline-grid; flex: 0 0 42px; width: 42px; height: 42px; place-items: center; border-radius: 14px; color: #101720; background: linear-gradient(145deg, #d9f99d, #45d6a4); box-shadow: 0 6px 18px rgba(69, 214, 164, .18); font-size: 13px; font-weight: 850; }
+.brand-mark svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.brand-copy { display: block; min-width: 0; opacity: 0; transform: translateX(-5px); transition: opacity .14s ease, transform .14s ease; white-space: nowrap; pointer-events: none; }
+.brand-copy strong { display: block; font-size: 14px; line-height: 1.25; letter-spacing: -.35px; }
+.brand-copy small { display: block; color: #75859a; font-size: 8px; letter-spacing: .13em; margin-top: 4px; }
+.sidebar:hover .brand-copy, .sidebar:focus-within .brand-copy, html.sidebar-pinned .brand-copy { opacity: 1; transform: translateX(0); }
+.sidebar-caption { padding: 0 10px 9px; color: #64748b; font-size: 8px; font-weight: 800; letter-spacing: .18em; white-space: nowrap; opacity: 0; transition: opacity .15s ease; }
+.sidebar:hover .sidebar-caption, .sidebar:focus-within .sidebar-caption, html.sidebar-pinned .sidebar-caption { opacity: 1; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 5px; min-width: 230px; }
+.nav-item { position: relative; display: flex; align-items: center; gap: 15px; width: 100%; min-height: 46px; padding: 0 13px; overflow: hidden; border: 1px solid transparent; border-radius: 12px; color: #91a0b4; background: transparent; font-size: 12px; font-weight: 600; text-align: left; text-decoration: none; white-space: nowrap; transition: background .18s ease, color .18s ease, border-color .18s ease; }
+html[data-theme="light"] .nav-item { color: #7c879d; }
+.nav-item:hover { color: var(--ink); background: rgba(148, 163, 184, .09); }
+.nav-item.active { color: #d9f99d; background: linear-gradient(100deg, rgba(163, 230, 53, .15), rgba(69, 214, 164, .055)); border-color: rgba(163, 230, 53, .14); }
+html[data-theme="light"] .nav-item.active { color: #4338ca; background: #eef2ff; border-color: #e0e7ff; }
+.nav-item.active::before { content: ""; position: absolute; left: -1px; top: 10px; bottom: 10px; width: 3px; border-radius: 0 4px 4px 0; background: var(--green); }
+.nav-icon { display: inline-grid; flex: 0 0 22px; width: 22px; height: 22px; place-items: center; }
+.nav-icon svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.nav-label { display: block; opacity: 0; transform: translateX(-4px); transition: opacity .12s ease, transform .12s ease; pointer-events: none; }
+.sidebar:hover .nav-label, .sidebar:focus-within .nav-label, html.sidebar-pinned .nav-label { opacity: 1; transform: translateX(0); }
+.sidebar-bottom { display: flex; align-items: center; gap: 11px; min-width: 230px; margin-top: auto; padding: 18px 13px 5px; border-top: 1px solid #263241; color: #8291a6; font-size: 10px; white-space: nowrap; }
+html[data-theme="light"] .sidebar-bottom { border-top-color: #e6eaf2; }
+.sidebar-status-dot, .footer-dot { display: inline-block; flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: #45d6a4; box-shadow: 0 0 0 4px rgba(69, 214, 164, .1); }
+.app-main { min-width: 0; min-height: 100vh; margin-left: var(--sidebar-width); display: flex; flex-direction: column; transition: margin-left .22s ease; }
+html.sidebar-pinned .app-main { margin-left: 252px; }
+.sidebar-overlay { display: none; }
+.topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 17px; min-height: 78px; padding: 13px clamp(18px, 3vw, 42px); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--ink); backdrop-filter: blur(18px); }
+.menu-toggle { flex: 0 0 38px; }
+.topbar-heading { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.topbar-overline { color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .17em; margin-bottom: 4px; }
+.topbar-heading strong { color: var(--ink); font-size: 14px; font-weight: 700; }
+.top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; min-width: 0; flex-wrap: wrap; margin-left: auto; }
+.top-date { display: inline-flex; align-items: center; gap: 7px; padding-right: 13px; border-right: 1px solid var(--line); color: var(--muted); font-size: 10px; white-space: nowrap; }
+.top-date svg, .top-action svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.top-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--surface-raised); font-size: 10px; font-weight: 650; text-decoration: none; cursor: pointer; white-space: nowrap; }
+.top-action:hover { color: var(--ink); border-color: color-mix(in srgb, var(--green) 45%, var(--line)); }
+.top-actions form { margin: 0; }
+.user-avatar { display: inline-grid; width: 22px; height: 22px; place-items: center; border-radius: 8px; background: var(--green-soft); color: var(--green); font-size: 10px; font-weight: 800; }
+.theme-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font-size: 10px; font-weight: 650; cursor: pointer; }
+.theme-toggle:hover { border-color: var(--green); }
+.theme-toggle svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.icon-button { display: inline-grid; width: 38px; height: 38px; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 11px; color: var(--ink); background: var(--surface); cursor: pointer; }
+.icon-button:hover { background: var(--surface-raised); border-color: var(--green); }
+.icon-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.container { width: 100%; max-width: 1700px; min-height: calc(100vh - 140px); margin: 0 auto; padding: clamp(18px, 2.4vw, 34px) clamp(17px, 3vw, 42px) 36px; }
+.footer { display: flex; align-items: center; justify-content: center; gap: 9px; margin-top: auto; padding: 17px; color: var(--muted); font-size: 9px; }
+
+/* Superfícies e componentes compartilhados entre todas as telas. */
+.page-head { align-items: center; gap: 18px; margin-bottom: 24px; }
+.page-head p { margin-bottom: 0; }
+.headline-spark { color: var(--green); font-size: .8em; }
+.month-form, .filter-bar { gap: 9px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); box-shadow: var(--shadow); }
+.month-form { padding: 8px; }
+.month-form label, .filter-bar label { color: var(--muted); font-size: 10px; font-weight: 650; }
+input, select, textarea { width: 100%; min-width: 0; max-width: 100%; color: var(--ink); background: var(--surface-raised); border: 1px solid var(--line); border-radius: 9px; padding: 10px 11px; outline: 0; }
+input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--muted) 78%, transparent); }
+input:focus, select:focus, textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 14%, transparent); }
+select option { color: var(--ink); background: var(--surface); }
+.month-form input, .filter-bar input, .filter-bar select { width: auto; min-width: 130px; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 10px 15px; border: 1px solid var(--green); border-radius: 10px; background: var(--green); color: #101720; font-size: 11px; font-weight: 800; line-height: 1.2; text-align: center; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.button:hover { color: #101720; background: var(--green-dark); border-color: var(--green-dark); }
+.button-light { color: var(--ink); border-color: var(--line); background: var(--surface-raised); }
+.button-light:hover { color: var(--ink); background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
+.button-danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 25%, var(--line)); background: var(--red-soft); }
+.button-danger:hover { color: #fff; background: var(--red); border-color: var(--red); }
+.button-small { min-height: 31px; padding: 7px 10px; border-radius: 8px; font-size: 10px; }
+.metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin-bottom: 24px; }
+.metric-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.metric, .compare-card, .panel { min-width: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
+.metric { padding: 18px 17px 15px; }
+.metric > span { display: block; color: var(--muted); font-size: 10px; font-weight: 600; margin-bottom: 9px; }
+.metric strong { display: block; color: var(--ink); font-size: clamp(19px, 2vw, 25px); font-weight: 750; letter-spacing: -.7px; overflow-wrap: anywhere; }
+.metric small { display: block; margin-top: 8px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.metric-good { border-top: 2px solid #45d6a4; }
+.metric-danger { border-top: 2px solid var(--red); }
+.section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 25px 0 13px; }
+.section-heading h2 { margin-bottom: 3px; }
+.section-heading p { font-size: 11px; margin-bottom: 0; }
+.compare-grid { gap: 13px; margin-bottom: 25px; }
+.compare-card { padding: 15px 17px; }
+.compare-card span, .compare-card small { display: block; color: var(--muted); font-size: 10px; }
+.compare-card b { display: block; margin: 6px 0; color: var(--ink); font-size: 20px; }
+.chart-grid { gap: 14px; }
+.panel { padding: 19px; }
+.chart-panel .muted { font-size: 10px; margin-bottom: 12px; }
+.chart-wrap { position: relative; width: 100%; min-width: 0; height: 255px; }
+.chart-wrap canvas { display: block; width: 100%; height: 100%; }
+.content-grid { gap: 14px; }
+.section-gap { margin-top: 20px; }
+.panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.panel-heading h2 { margin-bottom: 4px; }
+.panel-heading p { margin-bottom: 0; font-size: 10px; }
+.text-link { color: var(--green); font-size: 10px; font-weight: 750; white-space: nowrap; }
+.text-link:hover { color: var(--ink); }
+.budget-list { display: grid; gap: 14px; }
+.row-between { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 7px; color: var(--ink); font-size: 10px; }
+.row-between strong { color: var(--ink); font-size: 10px; text-align: right; white-space: nowrap; }
+.progress { height: 6px; background: var(--surface-raised); border-radius: 99px; overflow: hidden; }
+.progress span { display: block; max-width: 100%; height: 100%; border-radius: 99px; background: var(--chart-income); }
+.progress span.over { background: var(--red); }
+.budget-row small { display: block; margin-top: 5px; font-size: 9px; }
+.danger-text { color: var(--red) !important; }
+.good-text { color: var(--chart-income) !important; }
+.change { display: inline-block; font-size: 10px; font-weight: 750; }
+.table-wrap { width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: left; }
+th { color: var(--muted); background: var(--surface-raised); font-size: 9px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+th, td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+td { color: var(--ink); }
+tbody tr:hover { background: color-mix(in srgb, var(--green) 4%, transparent); }
+tbody tr:last-child td { border-bottom: 0; }
+td.money, th.money { text-align: right; white-space: nowrap; font-weight: 750; }
+tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
+.subline { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; line-height: 1.3; }
+.empty-cell { padding: 30px 12px; color: var(--muted); text-align: center; }
+.empty-state { padding: 20px; border: 1px dashed var(--line); border-radius: 12px; background: var(--surface-raised); color: var(--muted); font-size: 11px; line-height: 1.7; }
+.empty-state a { font-weight: 750; }
+.empty-hint { color: var(--muted); font-size: 11px; text-align: center; }
+.upcoming-item { display: grid; grid-template-columns: 43px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.upcoming-item:last-child { border-bottom: 0; }
+.upcoming-date { padding: 7px 4px; border-radius: 9px; background: var(--green-soft); color: var(--green); text-align: center; }
+.upcoming-date b { display: block; font-size: 17px; line-height: 1.1; }
+.upcoming-date small { font-size: 9px; }
+.upcoming-detail b { display: block; color: var(--ink); font-size: 11px; overflow-wrap: anywhere; }
+.upcoming-detail small { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; overflow-wrap: anywhere; }
+.upcoming-value { display: flex; align-items: flex-end; flex-direction: column; gap: 4px; color: var(--ink); white-space: nowrap; }
+.upcoming-value b { font-size: 10px; }
+.status { display: inline-block; padding: 4px 6px; border-radius: 100px; font-size: 8px; font-weight: 800; line-height: 1.1; text-transform: uppercase; white-space: nowrap; }
+.status-realizado { color: #45d6a4; background: rgba(69, 214, 164, .12); }
+.status-previsto { color: #fbbf24; background: rgba(251, 191, 36, .12); }
+.status-cancelado { color: var(--red); background: var(--red-soft); }
+.notice { padding: 11px 13px; margin: 12px 0 16px; border: 1px solid var(--line); border-radius: 10px; font-size: 11px; }
+.notice.error { color: var(--red); background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 27%, var(--line)); }
+.notice.success { color: var(--chart-income); background: color-mix(in srgb, var(--chart-income) 10%, var(--surface)); border-color: color-mix(in srgb, var(--chart-income) 22%, var(--line)); }
+.notice.info { color: var(--muted); background: var(--surface-raised); border-color: var(--line); }
+.filter-bar { display: flex; align-items: center; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 16px; }
+.filter-bar label:not(:first-child) { margin-left: 8px; }
+.form-panel { margin-bottom: 20px; }
+.form-panel h2 { margin-bottom: 17px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.field { display: flex; flex-direction: column; min-width: 0; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 700; }
+.field small { color: var(--muted); font-size: 9px; font-weight: 500; }
+.field-wide { grid-column: 1 / -1; }
+.form-actions { display: flex; grid-column: 1 / -1; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
+.form-actions a { display: inline-flex; align-items: center; }
+.helper-text { margin: 13px 0 0; color: var(--muted); font-size: 10px; }
+.floating-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.stack-list { display: grid; gap: 10px; }
+.fixed-item { padding: 0; overflow: hidden; }
+.fixed-item summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 17px; list-style: none; cursor: pointer; }
+.fixed-item summary::-webkit-details-marker { display: none; }
+.fixed-item summary > span:first-child b, .fixed-item summary small { display: block; }
+.fixed-item summary small { color: var(--muted); font-size: 9px; margin-top: 4px; }
+.summary-end { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; color: var(--ink); white-space: nowrap; }
+.compact-form { padding: 2px 17px 17px; }
+.action-stack { display: flex; flex-wrap: wrap; gap: 4px; min-width: 135px; }
+.action-stack form { margin: 0; }
+.text-button { border: 0; background: transparent; color: var(--green); padding: 5px; font-size: 10px; font-weight: 750; cursor: pointer; }
+.registration-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.registration-grid .panel h2 { margin-bottom: 15px; }
+.inline-form { display: flex; align-items: center; gap: 7px; }
+.inline-form input { flex: 1; min-width: 0; }
+.form-stack { display: grid; gap: 11px; }
+.simple-list { display: grid; margin-top: 15px; }
+.simple-list > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 10px; }
+.simple-list > div:last-child { border-bottom: 0; }
+.simple-list span { overflow-wrap: anywhere; }
+.simple-list small { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
+.simple-list b { color: var(--ink); font-size: 10px; white-space: nowrap; }
+.summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 16px 0; }
+.summary-grid .panel { min-width: 0; }
+.backup-panel { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 15px; }
+.backup-panel p { max-width: 660px; margin-bottom: 0; font-size: 11px; }
+.backup-panel h2 { margin-bottom: 5px; }
+.budget-cell { min-width: 95px; }
+.budget-cell small { display: block; margin-top: 4px; }
+.floating-actions .button { min-width: 120px; }
+.auth-body { min-height: 100vh; padding: 0; background: radial-gradient(circle at 15% 0%, color-mix(in srgb, var(--green) 11%, var(--paper)), var(--paper) 46%); color: var(--ink); }
+.auth-wrap { width: min(100% - 28px, 430px); margin: 0 auto; padding: clamp(28px, 8vh, 76px) 0 32px; }
+.auth-brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 22px; color: var(--ink); }
+.auth-brand strong { display: block; font-size: 21px; letter-spacing: -.5px; }
+.auth-brand small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+.auth-panel { padding: 25px; box-shadow: 0 18px 55px rgba(0, 0, 0, .18); }
+.auth-panel h1 { margin-bottom: 10px; }
+.auth-panel > p { font-size: 12px; line-height: 1.6; }
+.auth-submit { width: 100%; min-height: 44px; margin-top: 4px; font-size: 13px; }
+.auth-footnote { margin: 17px 0 0; color: var(--muted); font-size: 10px !important; text-align: center; }
+.auth-secondary-form { margin-top: 15px; text-align: center; }
+.auth-user-form { max-width: 820px; }
+.auth-user-form .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.auth-user-form .form-actions { align-self: end; }
+[hidden] { display: none !important; }
+.registration-row { min-width: 0; }
+.registration-edit-form { display: grid; grid-template-columns: minmax(0, 1fr) 84px auto; align-items: center; gap: 5px; min-width: 0; flex: 1; }
+.registration-edit-form input, .registration-edit-form select { width: 100%; min-width: 0; padding: 7px 6px; font-size: 10px; }
+.registration-row > form:not(.registration-edit-form) { flex: 0 0 auto; }
+.category-row > span { flex: 1; min-width: 0; }
+.compact-copy { margin: 10px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.savings-account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.savings-account-card { min-width: 0; }
+.savings-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.savings-card-head h3 { margin: 3px 0 0; color: var(--ink); font-size: 16px; overflow-wrap: anywhere; }
+.savings-balance { display: block; margin: 15px 0 3px; color: var(--ink); font-size: 25px; letter-spacing: -.04em; }
+.interest-form { display: grid; gap: 9px; padding-top: 15px; margin-top: 12px; border-top: 1px solid var(--line); }
+.account-actions { margin-top: 10px; }
+.money-positive { color: var(--chart-income); }
+.money-negative { color: var(--red); }
+.inactive-list { margin-top: 12px; color: var(--muted); font-size: 10px; }
+.inactive-list summary { padding: 7px 0; font-weight: 700; cursor: pointer; }
+
+/* Dashboard resumido com fluxo de caixa em linhas. */
+.dashboard-head { margin-bottom: 20px; }
+.dashboard-head .month-form { flex: 0 0 auto; }
+.dashboard-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 17px; }
+.dashboard-metrics .metric { position: relative; overflow: hidden; padding: 17px 18px 15px; }
+.dashboard-metrics .metric::after { content: ""; position: absolute; right: -22px; top: -30px; width: 100px; height: 100px; border-radius: 50%; background: currentColor; opacity: .035; pointer-events: none; }
+.metric-income { color: var(--chart-income); }
+.metric-expense { color: var(--chart-expense); }
+.metric-balance { color: var(--chart-accent); }
+.metric-label-row { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+.metric-symbol { display: inline-grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border-radius: 10px; background: color-mix(in srgb, currentColor 12%, var(--surface)); color: inherit; }
+.metric-symbol svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.dashboard-metrics .metric-label-row .metric-label { margin: 0; color: var(--muted); font-size: 10px; font-weight: 700; }
+.dashboard-metrics .metric > strong { color: var(--ink); font-size: clamp(20px, 2.2vw, 27px); }
+.dashboard-metrics .metric > small { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: var(--muted); font-size: 9px; }
+.metric-dot { display: inline-block; flex: 0 0 5px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.metric-comparison { margin-top: 9px; font-size: 9px; font-weight: 800; }
+.metric-comparison span { color: var(--muted); font-weight: 500; }
+.metric-comparison.up { color: var(--chart-income); }
+.metric-comparison.down { color: var(--chart-expense); }
+.cashflow-panel { padding: 20px 22px 15px; border-radius: 17px; }
+.cashflow-heading { align-items: center; margin-bottom: 3px; }
+.cashflow-heading h2 { margin-bottom: 3px; font-size: 18px; }
+.cashflow-heading .eyebrow { margin-bottom: 5px; }
+.chart-period { display: inline-flex; align-items: center; gap: 7px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 9px; white-space: nowrap; }
+.chart-status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--chart-income); }
+.cashflow-legend { display: flex; align-items: center; gap: 17px; margin-top: 15px; color: var(--muted); font-size: 10px; }
+.cashflow-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.cashflow-legend i { display: inline-block; width: 19px; height: 3px; border-radius: 5px; }
+.legend-income { background: var(--chart-income); }
+.legend-expense { background: var(--chart-expense); }
+.cashflow-chart-wrap { height: clamp(260px, 31vw, 360px); margin-top: 3px; }
+.cashflow-footer { display: flex; align-items: stretch; justify-content: flex-start; gap: clamp(24px, 6vw, 72px); padding: 13px 2px 0; border-top: 1px solid var(--line); }
+.cashflow-footer span { display: flex; flex-direction: column; gap: 4px; }
+.cashflow-footer small { color: var(--muted); font-size: 9px; }
+.cashflow-footer strong { color: var(--ink); font-size: 13px; }
+.cashflow-footer .positive-value { color: var(--chart-income); }
+.cashflow-footer .negative-value { color: var(--chart-expense); }
+.dashboard-lower-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.dashboard-lower-grid .card-chart-panel { grid-column: 1 / -1; }
+.dashboard-lower-grid .chart-wrap { height: 245px; }
+.dashboard-lower-grid .panel-heading { margin-bottom: 8px; }
+
+/* Cartões bancários: só armazenamos e mostramos os quatro últimos dígitos. */
+.wallet-section { margin-top: 4px; }
+.wallet-section .section-heading { margin-top: 0; }
+.wallet-count, .invoice-item-count { color: var(--muted); font-size: 9px; white-space: nowrap; }
+.bank-card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
+.bank-card { position: relative; isolation: isolate; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; min-height: 190px; aspect-ratio: 1.68 / 1; overflow: hidden; padding: 17px 18px 15px; border: 1px solid rgba(255,255,255,.12); border-radius: 17px; color: #fff; box-shadow: 0 13px 28px rgba(0,0,0,.2); }
+.bank-card::before { content: ""; position: absolute; z-index: -1; width: 185px; height: 185px; right: -54px; top: -70px; border-radius: 50%; border: 1px solid rgba(255,255,255,.16); box-shadow: 0 0 0 19px rgba(255,255,255,.035), 0 0 0 39px rgba(255,255,255,.025); }
+.bank-card::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(125deg, rgba(255,255,255,.12), transparent 40%, rgba(0,0,0,.16)); pointer-events: none; }
+.bank-card-nubank { background: linear-gradient(135deg, #820ad1 0%, #5d20a6 50%, #32105d 100%); }
+.bank-card-santander { background: linear-gradient(135deg, #30333a 0%, #101216 57%, #050607 100%); }
+.bank-card-bradesco { background: linear-gradient(135deg, #f52248 0%, #be092d 56%, #7f0925 100%); }
+.bank-card-ticket { background: linear-gradient(135deg, #25bd73 0%, #10834b 54%, #075435 100%); }
+.bank-card-clear { background: linear-gradient(135deg, #2788ff 0%, #1551c7 55%, #132d70 100%); }
+.bank-card-generic { background: linear-gradient(135deg, #4958d6 0%, #242b68 55%, #151933 100%); }
+.bank-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.bank-card-issuer { font-size: 17px; line-height: 1.15; font-weight: 800; letter-spacing: -.55px; }
+.bank-card-kind { padding: 4px 6px; border: 1px solid rgba(255,255,255,.27); border-radius: 6px; background: rgba(255,255,255,.11); font-size: 7px; font-weight: 800; letter-spacing: .07em; text-align: center; }
+.bank-card-chip { display: grid; grid-template-columns: repeat(2, 10px); grid-template-rows: repeat(2, 9px); width: 23px; height: 20px; overflow: hidden; border: 1px solid rgba(255,255,255,.52); border-radius: 5px; background: linear-gradient(135deg, #f4df9b, #b99e5c); }
+.bank-card-chip span { border: .5px solid rgba(74, 61, 34, .36); }
+.bank-card-number { margin-top: 4px; color: rgba(255,255,255,.92); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: clamp(11px, 1.08vw, 14px); letter-spacing: .045em; white-space: nowrap; }
+.bank-card-number strong { color: #fff; font-weight: 800; }
+.bank-card-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; min-width: 0; }
+.bank-card-foot > div { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
+.bank-card-foot small { color: rgba(255,255,255,.65); font-size: 6px; font-weight: 800; letter-spacing: .14em; }
+.bank-card-foot strong { display: block; max-width: 155px; overflow: hidden; color: #fff; font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.bank-card-label { text-align: right; }
+.bank-card-label strong { max-width: 120px; }
+.invoice-section { min-width: 0; }
+.invoice-section .section-heading { margin-bottom: 13px; }
+.invoice-filter { display: flex; align-items: center; gap: 10px; }
+.invoice-filter select { flex: 1; min-width: 180px; }
+.invoice-summary { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 14px; margin: 16px 0; }
+.invoice-card-mini { min-width: 0; }
+.invoice-card-mini .bank-card { width: 100%; min-height: 190px; height: 100%; }
+.invoice-total-metric { display: flex; flex-direction: column; justify-content: center; }
+.invoice-total-metric .invoice-meta { display: flex; gap: 10px; margin-top: 13px; }
+.invoice-meta span { padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); font-size: 9px; }
+.invoice-table-panel { margin-top: 15px; }
+.registration-card-list { display: grid; gap: 13px; margin-top: 16px; }
+.registration-card-entry { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-raised); }
+.registration-card-visual { min-width: 0; }
+.registration-card-visual .bank-card { min-height: 145px; padding: 12px; border-radius: 12px; }
+.registration-card-visual .bank-card-issuer { font-size: 14px; }
+.registration-card-visual .bank-card-kind { font-size: 6px; }
+.registration-card-visual .bank-card-number { font-size: 10px; }
+.registration-card-edit { display: grid; gap: 13px; min-width: 0; }
+.registration-card-edit > div strong { display: block; color: var(--ink); font-size: 11px; }
+.registration-card-edit > div small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.last-four-form { display: flex; align-items: flex-end; gap: 8px; }
+.last-four-form .field { flex: 1; }
+.last-four-form input { padding: 8px; }
+
+@media (max-width: 1180px) {
+  .bank-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-grid:not(.dashboard-metrics) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .content-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .top-date { display: none; }
+  .registration-grid { grid-template-columns: minmax(0, 1fr); }
+  .registration-card-entry { grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); }
+}
+@media (max-width: 760px) {
+  :root { --sidebar-width: 0px; }
+  .sidebar { width: 260px; max-width: calc(100vw - 54px); transform: translateX(-105%); padding: 17px 12px; box-shadow: none; }
+  .sidebar:hover, .sidebar:focus-within, html.sidebar-pinned .sidebar { width: 260px; }
+  .brand-copy, .sidebar-caption, .nav-label { opacity: 1; transform: none; }
+  .sidebar-overlay { position: fixed; inset: 0; z-index: 55; display: block; width: 100%; height: 100%; padding: 0; border: 0; background: rgba(0,0,0,.55); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease, visibility .2s ease; }
+  html.sidebar-open .sidebar { transform: translateX(0); box-shadow: 18px 0 50px rgba(0,0,0,.3); }
+  html.sidebar-open .sidebar-overlay { opacity: 1; visibility: visible; pointer-events: auto; }
+  .app-main, html.sidebar-pinned .app-main { margin-left: 0; }
+  .topbar { min-height: 67px; gap: 10px; padding: 10px 13px; }
+  .menu-toggle { width: 36px; height: 36px; flex-basis: 36px; }
+  .topbar-overline { font-size: 7px; }
+  .topbar-heading strong { font-size: 12px; }
+  .top-actions { gap: 6px; }
+  .theme-toggle { width: 35px; min-height: 35px; padding: 0; }
+  .theme-toggle .theme-text { display: none; }
+  .user-chip { padding: 4px; }
+  .user-name { display: none; }
+  .top-action { min-height: 34px; padding: 5px 7px; }
+  .logout-action span, .admin-shortcut { display: none; }
+  .container { min-height: calc(100vh - 115px); padding: 20px 13px 28px; }
+  .page-head { flex-direction: column; align-items: stretch; gap: 13px; margin-bottom: 18px; }
+  .page-head > .button { align-self: flex-start; }
+  .month-form { align-self: stretch; flex-wrap: nowrap; box-shadow: none; }
+  .month-form input { flex: 1; width: 100px; min-width: 0; }
+  .month-form .button { padding: 9px 10px; }
+  .dashboard-head .month-form { align-self: stretch; }
+  .metric-grid, .metric-grid:not(.dashboard-metrics) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-bottom: 16px; }
+  .dashboard-metrics { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-metrics .metric { padding: 14px 13px 12px; }
+  .dashboard-metrics .metric-label-row { margin-bottom: 8px; }
+  .dashboard-metrics .metric > strong { font-size: 23px; }
+  .metric { padding: 13px 11px; border-radius: 12px; }
+  .metric strong { font-size: 18px; }
+  .metric > span { font-size: 9px; margin-bottom: 7px; }
+  .metric small { font-size: 9px; }
+  .metric-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compare-grid, .chart-grid, .registration-grid, .summary-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .compare-card { padding: 13px; }
+  .compare-card b { font-size: 18px; }
+  .panel { padding: 14px; border-radius: 13px; }
+  .cashflow-panel { padding: 15px 12px 12px; }
+  .cashflow-heading { align-items: flex-start; }
+  .cashflow-heading h2 { font-size: 16px; }
+  .cashflow-legend { margin-top: 12px; }
+  .cashflow-chart-wrap { height: 260px; }
+  .cashflow-footer { gap: 15px; }
+  .cashflow-footer strong { font-size: 11px; }
+  .dashboard-lower-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .dashboard-lower-grid .card-chart-panel { grid-column: auto; }
+  .dashboard-lower-grid .chart-wrap { height: 235px; }
+  .chart-wrap { height: 235px; }
+  .panel-heading { align-items: flex-start; }
+  .panel-heading h2 { font-size: 14px; }
+  .section-heading { margin: 22px 0 11px; }
+  .filter-bar { gap: 7px; }
+  .filter-bar label:not(:first-child) { margin-left: 0; }
+  .filter-bar input, .filter-bar select { flex: 1; min-width: 115px; }
+  .form-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .field-wide { grid-column: auto; }
+  .form-actions { grid-column: auto; }
+  .fixed-item summary { padding: 13px; }
+  .compact-form { padding: 0 13px 13px; }
+  .upcoming-item { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 7px; }
+  .upcoming-detail b { font-size: 10px; }
+  .upcoming-value b { font-size: 9px; }
+  .status { font-size: 7px; padding: 4px 5px; }
+  .backup-panel { flex-direction: column; align-items: flex-start; }
+  .backup-panel .button { align-self: stretch; }
+  .floating-actions { justify-content: stretch; }
+  .floating-actions .button { flex: 1; min-width: 0; white-space: normal; }
+  .table-wrap { margin-right: -3px; }
+  table { min-width: 640px; }
+  .summary-grid .panel { padding: 14px; }
+  .savings-account-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .registration-edit-form { grid-template-columns: minmax(0, 1fr) 78px; }
+  .registration-edit-form button { grid-column: 1 / -1; justify-self: start; }
+  .people-row { align-items: start !important; }
+  .savings-balance { font-size: 23px; }
+  .bank-card-grid { grid-template-columns: minmax(0, 1fr); gap: 11px; }
+  .bank-card { min-height: 190px; }
+  .invoice-filter { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .invoice-filter label:not(:first-child) { margin-left: 0; }
+  .invoice-filter input, .invoice-filter select { width: 100%; min-width: 0; }
+  .invoice-summary { grid-template-columns: minmax(0, 1fr); }
+  .invoice-card-mini { max-width: 420px; width: 100%; }
+  .invoice-total-metric { min-height: 165px; }
+  .registration-card-entry { grid-template-columns: minmax(0, 1fr); }
+  .registration-card-visual .bank-card { min-height: 185px; padding: 15px 17px; }
+  .registration-card-visual .bank-card-issuer { font-size: 17px; }
+  .registration-card-visual .bank-card-number { font-size: 13px; }
+  .registration-card-edit { padding: 2px 4px 4px; }
+  .last-four-form { align-items: flex-end; }
+  .auth-user-form .form-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 380px) {
+  .container { padding-left: 9px; padding-right: 9px; }
+  .topbar { gap: 7px; padding-left: 9px; padding-right: 9px; }
+  .topbar-heading strong { font-size: 11px; }
+  .top-actions { gap: 4px; }
+  .theme-toggle, .top-action, .menu-toggle { width: 32px; height: 32px; min-height: 32px; }
+  .metric-grid, .metric-grid:not(.dashboard-metrics) { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-metrics .metric > strong { font-size: 22px; }
+  .month-form { gap: 5px; padding: 7px; }
+  .month-form label { display: none; }
+  .month-form input { min-width: 0; }
+  .upcoming-item { grid-template-columns: 34px minmax(0, 1fr); }
+  .upcoming-value { grid-column: 2; flex-direction: row; align-items: center; justify-content: space-between; }
+  .cashflow-chart-wrap { height: 235px; }
+  .cashflow-footer { flex-wrap: wrap; }
+  .bank-card { padding: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+```
 
 ## `app/static/js/app.js`
 
-````javascript
+```javascript
 (() => {
+  const root = document.documentElement;
+  const body = document.body;
+  const themeButton = document.getElementById('theme-toggle');
+  const themeText = themeButton?.querySelector('.theme-text');
+  const themeIcon = themeButton?.querySelector('.theme-icon');
+  const sidebar = document.getElementById('app-sidebar');
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+  function applyTheme(theme) {
+    const next = theme === 'light' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    try { localStorage.setItem('casa-theme', next); } catch (_) { /* Tema continua funcionando sem armazenamento local. */ }
+    if (themeText) themeText.textContent = next === 'dark' ? 'Material Light' : 'Tema escuro';
+    if (themeIcon) {
+      themeIcon.innerHTML = next === 'dark'
+        ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/>'
+        : '<path d="M20.5 15.5A8.5 8.5 0 0 1 8.5 3.5 8.5 8.5 0 1 0 20.5 15.5Z"/>';
+    }
+    themeButton?.setAttribute('aria-label', next === 'dark' ? 'Mudar para Material Light' : 'Mudar para tema Dark');
+    // Aguarda o CSS trocar as cores antes de redesenhar os gráficos em canvas.
+    window.setTimeout(renderCharts, 30);
+  }
+
+  themeButton?.addEventListener('click', () => applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark'));
+
+  function mobileMenu() { return window.matchMedia('(max-width: 760px)').matches; }
+  function setSidebarOpen(open) {
+    root.classList.toggle('sidebar-open', open && mobileMenu());
+    if (sidebarToggle) {
+      sidebarToggle.setAttribute('aria-expanded', String(open));
+      sidebarToggle.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+    }
+    if (sidebarOverlay) sidebarOverlay.tabIndex = open && mobileMenu() ? 0 : -1;
+  }
+  sidebarToggle?.addEventListener('click', () => {
+    if (mobileMenu()) setSidebarOpen(!root.classList.contains('sidebar-open'));
+    else {
+      const pinned = root.classList.toggle('sidebar-pinned');
+      try { localStorage.setItem('casa-sidebar-pinned', pinned ? '1' : '0'); } catch (_) { /* Preferência opcional. */ }
+      sidebarToggle.setAttribute('aria-expanded', String(pinned));
+      sidebarToggle.setAttribute('aria-label', pinned ? 'Recolher menu' : 'Fixar menu expandido');
+    }
+  });
+  sidebarOverlay?.addEventListener('click', () => setSidebarOpen(false));
+  sidebar?.querySelectorAll('a').forEach(link => link.addEventListener('click', () => setSidebarOpen(false)));
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') setSidebarOpen(false); });
+  try {
+    if (localStorage.getItem('casa-sidebar-pinned') === '1' && !mobileMenu()) root.classList.add('sidebar-pinned');
+  } catch (_) { /* Preferência opcional. */ }
+  window.addEventListener('resize', () => { if (!mobileMenu()) setSidebarOpen(false); });
+
   function renderCharts() {
-    const dataNode = document.getElementById("chart-data");
+    const dataNode = document.getElementById('chart-data');
     if (!dataNode || !window.FamilyCharts) return;
     try { window.FamilyCharts.render(JSON.parse(dataNode.textContent)); }
-    catch (error) { console.error("Não foi possível renderizar os gráficos locais.", error); }
+    catch (error) { console.error('Não foi possível renderizar os gráficos locais.', error); }
   }
-  document.addEventListener("DOMContentLoaded", renderCharts);
+  document.addEventListener('DOMContentLoaded', renderCharts);
   let resizeTimer;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(renderCharts, 140);
+  window.addEventListener('resize', () => {
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(renderCharts, 140);
   });
+  applyTheme(root.dataset.theme || 'dark');
 })();
-````
+```
 
 ## `app/static/js/htmx-lite.js`
 
-````javascript
+```javascript
 /* Adaptador mínimo para os atributos hx-get/hx-trigger/hx-swap usados neste projeto. */
 (() => {
   async function loadElement(element) {
@@ -2394,42 +2919,73 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
   });
   window.htmx = { ajax: (_method, url, options = {}) => fetch(url).then(r => r.text()).then(html => { if (options.target) document.querySelector(options.target).innerHTML = html; }) };
 })();
-````
+```
 
 ## `app/static/js/local-charts.js`
 
-````javascript
-/* Renderizador local de canvas para gráficos offline. Interface limitada ao uso desta aplicação. */
+```javascript
+/* Gráficos locais em canvas; sem CDN ou requisições externas. */
 (() => {
-  const palette = ["#236b56", "#e2a348", "#547bba", "#ba6d58", "#8d7ab8", "#63a6a1", "#d477a8", "#8a9b65", "#7b8794", "#c4a75b"];
-  const money = cents => {
-    const value = (Number(cents || 0) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-    return value;
+  const palette = ['#a3e635', '#fb7185', '#60a5fa', '#c084fc', '#fbbf24', '#2dd4bf', '#f472b6', '#a3a3a3', '#818cf8', '#34d399'];
+  const money = cents => (Number(cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const shortMoney = cents => {
+    const value = Math.abs(Number(cents || 0)) / 100;
+    if (value >= 1000000) return `${(value / 1000000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`;
+    if (value >= 1000) return `${(value / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`;
+    return `${Math.round(value).toLocaleString('pt-BR')}`;
   };
+  const colors = () => {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      text: style.getPropertyValue('--chart-text').trim() || '#91a0b7',
+      grid: style.getPropertyValue('--chart-grid').trim() || '#293548',
+      surface: style.getPropertyValue('--surface').trim() || '#151c27',
+      ink: style.getPropertyValue('--ink').trim() || '#e9eef7',
+      income: style.getPropertyValue('--chart-income').trim() || '#45d6a4',
+      expense: style.getPropertyValue('--chart-expense').trim() || '#fb7185',
+      accent: style.getPropertyValue('--chart-accent').trim() || '#a3e635',
+    };
+  };
+  const shorten = (text, size = 12) => String(text ?? '').length > size ? String(text).slice(0, size - 1) + '…' : String(text ?? '');
+
   function setup(canvas) {
     const rect = canvas.getBoundingClientRect();
-    const width = Math.max(280, Math.floor(rect.width || 340));
-    const height = Math.max(220, Math.floor(rect.height || 260));
+    const width = Math.max(240, Math.floor(rect.width || 340));
+    const height = Math.max(210, Math.floor(rect.height || 260));
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
-    const ctx = canvas.getContext("2d"); ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    const ctx = canvas.getContext('2d'); ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = "#69756f"; ctx.strokeStyle = "#e4e9e5";
-    return { ctx, width, height };
+    const c = colors();
+    ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = c.text; ctx.strokeStyle = c.grid;
+    return { ctx, width, height, c };
   }
-  const shorten = (text, size = 12) => String(text).length > size ? String(text).slice(0, size - 1) + "…" : String(text);
-  function legend(ctx, items, x, y, maxWidth) {
+
+  function drawLegend(ctx, items, x, y, maxWidth, textColor) {
     let cx = x, cy = y;
-    items.forEach((item, index) => {
-      const label = String(item.label || ""); const needed = 20 + Math.min(124, ctx.measureText(label).width);
+    items.forEach(item => {
+      const needed = 22 + Math.min(138, ctx.measureText(String(item.label || '')).width);
       if (cx + needed > x + maxWidth && cx !== x) { cx = x; cy += 18; }
-      ctx.fillStyle = item.color || palette[index % palette.length]; ctx.fillRect(cx, cy - 8, 9, 9);
-      ctx.fillStyle = "#4f5e56"; ctx.fillText(shorten(label, 22), cx + 13, cy);
+      ctx.fillStyle = item.color; ctx.fillRect(cx, cy - 8, 9, 9);
+      ctx.fillStyle = textColor; ctx.textAlign = 'left'; ctx.fillText(shorten(item.label, 21), cx + 14, cy);
       cx += needed + 8;
     });
   }
+
+  function axes(ctx, width, plot, max, min, c) {
+    ctx.strokeStyle = c.grid; ctx.fillStyle = c.text; ctx.font = '10px system-ui'; ctx.textAlign = 'right';
+    const range = max - min || 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = plot.top + plot.height * i / 4;
+      ctx.beginPath(); ctx.moveTo(plot.left, y); ctx.lineTo(width - plot.right, y); ctx.stroke();
+      const value = max - range * i / 4;
+      const prefix = value < -0.5 ? '−' : '';
+      ctx.fillText(`${prefix}${shortMoney(value)}`, plot.left - 7, y + 3);
+    }
+  }
+
   function drawPie(canvas, payload) {
-    const { ctx, width, height } = setup(canvas); const values = payload.data || []; const labels = payload.labels || [];
+    const { ctx, width, height, c } = setup(canvas); const values = payload.data || []; const labels = payload.labels || [];
     const total = values.reduce((a, b) => a + Number(b), 0);
     if (!total) return false;
     const cx = width / 2, cy = height * 0.30, radius = Math.min(width * 0.30, height * 0.27);
@@ -2439,125 +2995,174 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, radius, angle, next); ctx.closePath();
       ctx.fillStyle = palette[i % palette.length]; ctx.fill(); angle = next;
     });
-    ctx.beginPath(); ctx.arc(cx, cy, radius * 0.58, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill();
-    ctx.textAlign = "center"; ctx.fillStyle = "#1e3c31"; ctx.font = "700 14px system-ui"; ctx.fillText(money(total), cx, cy + 4);
-    ctx.textAlign = "left"; ctx.font = "11px system-ui";
+    ctx.beginPath(); ctx.arc(cx, cy, radius * 0.58, 0, Math.PI * 2); ctx.fillStyle = c.surface; ctx.fill();
+    ctx.textAlign = 'center'; ctx.fillStyle = c.ink; ctx.font = '700 13px system-ui'; ctx.fillText(shortMoney(total), cx, cy + 4);
+    ctx.textAlign = 'left'; ctx.font = '10px system-ui';
     const legendItems = labels.map((label, i) => ({ label: `${label}: ${money(values[i])}`, color: palette[i % palette.length] }));
-    const colWidth = width > 400 ? width / 2 - 14 : width - 22; let y = height * 0.62;
-    legendItems.slice(0, 7).forEach((item, i) => {
-      const col = width > 400 ? i % 2 : 0; const row = width > 400 ? Math.floor(i / 2) : i;
-      ctx.fillStyle = item.color; ctx.fillRect(10 + col * (colWidth + 8), y + row * 16 - 8, 8, 8);
-      ctx.fillStyle = "#53635b"; ctx.fillText(shorten(item.label, width > 400 ? 36 : 34), 23 + col * (colWidth + 8), y + row * 16);
+    const colWidth = width > 430 ? width / 2 - 14 : width - 22; const startY = height * 0.62;
+    legendItems.slice(0, 8).forEach((item, i) => {
+      const col = width > 430 ? i % 2 : 0; const row = width > 430 ? Math.floor(i / 2) : i;
+      const y = startY + row * 16;
+      ctx.fillStyle = item.color; ctx.fillRect(10 + col * (colWidth + 8), y - 8, 8, 8);
+      ctx.fillStyle = c.text; ctx.fillText(shorten(item.label, width > 430 ? 35 : 31), 23 + col * (colWidth + 8), y);
     });
     return true;
   }
-  function axes(ctx, width, height, plot, max) {
-    ctx.strokeStyle = "#e5eae6"; ctx.fillStyle = "#78837d"; ctx.font = "10px system-ui"; ctx.textAlign = "right";
-    for (let i = 0; i <= 4; i++) {
-      const y = plot.top + (plot.height * i / 4); ctx.beginPath(); ctx.moveTo(plot.left, y); ctx.lineTo(width - plot.right, y); ctx.stroke();
-      const value = max * (1 - i / 4); ctx.fillText(value === 0 ? "0" : (Math.abs(value) >= 100000 ? `${Math.round(value / 100000) / 10} mi` : `${Math.round(value / 1000)} mil`), plot.left - 7, y + 3);
-    }
-  }
+
   function drawBars(canvas, labels, series, stacked = false) {
-    const { ctx, width, height } = setup(canvas); if (!labels || !labels.length) return;
-    const plot = { left: 44, right: 8, top: 15, bottom: 40 }; plot.width = width - plot.left - plot.right; plot.height = height - plot.top - plot.bottom;
+    if (!canvas) return;
+    const { ctx, width, height, c } = setup(canvas); if (!labels || !labels.length) return;
+    const plot = { left: 48, right: 10, top: 17, bottom: 43 }; plot.width = width - plot.left - plot.right; plot.height = height - plot.top - plot.bottom;
     let max = 0;
-    labels.forEach((_, i) => { const vals = series.map(s => Number(s.data[i] || 0)); max = Math.max(max, stacked ? vals.reduce((a, b) => a + b, 0) : Math.max(...vals)); });
-    max = max || 100; axes(ctx, width, height, plot, max * 1.08);
-    const groupWidth = plot.width / labels.length; const inner = groupWidth * .72; const barWidth = Math.max(2, inner / (stacked ? 1 : series.length) - 3);
+    labels.forEach((_, i) => { const vals = series.map(s => Number(s.data[i] || 0)); max = Math.max(max, stacked ? vals.reduce((a, b) => a + b, 0) : Math.max(0, ...vals)); });
+    max = max || 100; axes(ctx, width, plot, max * 1.08, 0, c);
+    const groupWidth = plot.width / labels.length; const inner = groupWidth * .72; const barWidth = Math.max(2, inner / (stacked ? 1 : Math.max(1, series.length)) - 3);
     labels.forEach((label, i) => {
       let stackedHeight = 0;
       series.forEach((s, j) => {
         const val = Number(s.data[i] || 0); const h = val / (max * 1.08) * plot.height;
         const x = plot.left + i * groupWidth + (groupWidth - inner) / 2 + (stacked ? 0 : j * (barWidth + 3));
         const y = plot.top + plot.height - (stacked ? stackedHeight + h : h);
-        ctx.fillStyle = s.color || palette[j % palette.length]; ctx.fillRect(x, y, barWidth, h);
+        ctx.fillStyle = s.color || palette[j % palette.length]; ctx.beginPath();
+        const radius = Math.min(4, barWidth / 2); ctx.roundRect(x, y, barWidth, Math.max(0, h), radius); ctx.fill();
         if (stacked) stackedHeight += h;
       });
-      ctx.save(); ctx.translate(plot.left + i * groupWidth + groupWidth / 2, height - 22); ctx.rotate(labels.length > 8 ? -0.55 : 0);
-      ctx.textAlign = labels.length > 8 ? "right" : "center"; ctx.fillStyle = "#69756f"; ctx.fillText(shorten(label, 9), 0, 0); ctx.restore();
+      ctx.save(); ctx.translate(plot.left + i * groupWidth + groupWidth / 2, height - 22); ctx.rotate(labels.length > 8 ? -0.50 : 0);
+      ctx.textAlign = labels.length > 8 ? 'right' : 'center'; ctx.fillStyle = c.text; ctx.fillText(shorten(label, 9), 0, 0); ctx.restore();
     });
-    legend(ctx, series.map((s, i) => ({ label: s.label, color: s.color || palette[i % palette.length] })), plot.left, height - 4, plot.width);
+    drawLegend(ctx, series.map((s, i) => ({ label: s.label, color: s.color || palette[i % palette.length] })), plot.left, height - 4, plot.width, c.text);
   }
+
   function drawLine(canvas, labels, values) {
-    const { ctx, width, height } = setup(canvas); if (!labels || !labels.length) return;
-    const plot = { left: 45, right: 10, top: 17, bottom: 40 }; plot.width = width - plot.left - plot.right; plot.height = height - plot.top - plot.bottom;
+    if (!canvas) return;
+    const { ctx, width, height, c } = setup(canvas); if (!labels || !labels.length || !values?.length) return;
+    const plot = { left: 48, right: 12, top: 18, bottom: 36 }; plot.width = width - plot.left - plot.right; plot.height = height - plot.top - plot.bottom;
     const min = Math.min(0, ...values), max = Math.max(1, ...values), range = max - min || 1;
-    ctx.strokeStyle = "#e5eae6"; ctx.fillStyle = "#78837d"; ctx.font = "10px system-ui"; ctx.textAlign = "right";
-    for (let i = 0; i <= 4; i++) { const y = plot.top + plot.height * i / 4; ctx.beginPath(); ctx.moveTo(plot.left, y); ctx.lineTo(width - plot.right, y); ctx.stroke(); const val = max - (range * i / 4); ctx.fillText(`${Math.round(val / 1000)} mil`, plot.left - 7, y + 3); }
-    ctx.beginPath(); values.forEach((v, i) => { const x = plot.left + (labels.length === 1 ? plot.width / 2 : i * plot.width / (labels.length - 1)); const y = plot.top + (max - v) / range * plot.height; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
-    ctx.strokeStyle = "#236b56"; ctx.lineWidth = 2.5; ctx.stroke();
-    values.forEach((v, i) => { const x = plot.left + (labels.length === 1 ? plot.width / 2 : i * plot.width / (labels.length - 1)); const y = plot.top + (max - v) / range * plot.height; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fillStyle = "#236b56"; ctx.fill(); });
-    labels.forEach((label, i) => { const x = plot.left + (labels.length === 1 ? plot.width / 2 : i * plot.width / (labels.length - 1)); ctx.fillStyle = "#69756f"; ctx.textAlign = "center"; ctx.fillText(shorten(label, 9), x, height - 21); });
+    axes(ctx, width, plot, max, min, c);
+    const point = (v, i) => ({ x: plot.left + (labels.length === 1 ? plot.width / 2 : i * plot.width / (labels.length - 1)), y: plot.top + (max - v) / range * plot.height });
+    ctx.beginPath(); values.forEach((v, i) => { const p = point(v, i); i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); });
+    ctx.strokeStyle = c.accent; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.stroke();
+    values.forEach((v, i) => { const p = point(v, i); ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fillStyle = c.accent; ctx.fill(); });
+    labels.forEach((label, i) => { const p = point(values[i], i); ctx.fillStyle = c.text; ctx.textAlign = 'center'; ctx.fillText(shorten(label, 9), p.x, height - 15); });
   }
+
+  // Duas curvas compartilham a escala; quando entradas/saídas variam, as linhas cruzam visualmente.
+  function drawCashflow(canvas, labels, incomes, expenses) {
+    if (!canvas) return;
+    const { ctx, width, height, c } = setup(canvas);
+    if (!labels?.length) return;
+    const maxValue = Math.max(1, ...incomes.map(Number), ...expenses.map(Number));
+    const plot = { left: 58, right: 18, top: 24, bottom: 42 };
+    plot.width = Math.max(1, width - plot.left - plot.right); plot.height = Math.max(1, height - plot.top - plot.bottom);
+    axes(ctx, width, plot, maxValue * 1.08, 0, c);
+    const xAt = i => plot.left + (labels.length === 1 ? plot.width / 2 : i * plot.width / (labels.length - 1));
+    const yAt = value => plot.top + plot.height - (Number(value || 0) / (maxValue * 1.08)) * plot.height;
+    const series = [
+      { label: 'Entradas', data: incomes || [], color: c.income },
+      { label: 'Saídas', data: expenses || [], color: c.expense },
+    ];
+    series.forEach(s => {
+      const points = labels.map((_, i) => ({ x: xAt(i), y: yAt(s.data[i] || 0) }));
+      if (!points.length) return;
+      ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        const prev = points[i - 1], current = points[i], midX = (prev.x + current.x) / 2;
+        ctx.bezierCurveTo(midX, prev.y, midX, current.y, current.x, current.y);
+      }
+      ctx.strokeStyle = s.color; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+      points.forEach(point => { ctx.beginPath(); ctx.arc(point.x, point.y, 3, 0, Math.PI * 2); ctx.fillStyle = s.color; ctx.fill(); });
+    });
+    labels.forEach((label, i) => {
+      ctx.fillStyle = c.text; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText(shorten(label, 8), xAt(i), height - 17);
+    });
+  }
+
   window.FamilyCharts = {
     render(payload) {
-      const pie = document.getElementById("chart-pie");
-      if (pie) { const ok = drawPie(pie, payload.pie || {}); const empty = document.getElementById("pie-empty"); if (empty) empty.hidden = ok; }
-      const bars = document.getElementById("chart-bars");
-      if (bars) drawBars(bars, payload.bars.labels, [
-        { label: "Receitas", data: payload.bars.income, color: "#236b56" },
-        { label: "Despesas", data: payload.bars.expense, color: "#e2a348" }
+      const pie = document.getElementById('chart-pie');
+      if (pie) { const ok = drawPie(pie, payload.pie || {}); const empty = document.getElementById('pie-empty'); if (empty) empty.hidden = ok; }
+      const cashflow = document.getElementById('chart-cashflow');
+      const lineData = payload.cashflow || payload.bars || {};
+      if (cashflow) drawCashflow(cashflow, lineData.labels || [], lineData.income || [], lineData.expense || []);
+      const bars = document.getElementById('chart-bars');
+      if (bars) drawBars(bars, payload.bars?.labels || [], [
+        { label: 'Entradas', data: payload.bars?.income || [], color: colors().income },
+        { label: 'Saídas', data: payload.bars?.expense || [], color: colors().expense },
       ]);
-      const line = document.getElementById("chart-line"); if (line) drawLine(line, payload.line.labels, payload.line.data);
-      const cards = document.getElementById("chart-cards");
-      if (cards) drawBars(cards, payload.cards.labels, (payload.cards.datasets || []).map((s, i) => ({ ...s, color: palette[i % palette.length] })), true);
+      const line = document.getElementById('chart-line'); if (line) drawLine(line, payload.line?.labels || [], payload.line?.data || []);
+      const cards = document.getElementById('chart-cards');
+      if (cards) drawBars(cards, payload.cards?.labels || [], (payload.cards?.datasets || []).map((s, i) => ({ ...s, color: palette[i % palette.length] })), true);
     }
   };
 })();
-````
+```
 
 ## `app/templates/base.html`
 
-````html
+```html
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#12352d">
+  <meta name="theme-color" content="#0b0f14">
   <title>{% block title %}Finanças da Família{% endblock %}</title>
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('casa-theme')||'dark'}catch(e){}</script>
   <link rel="stylesheet" href="/static/css/app.css">
   <script defer src="/static/js/htmx-lite.js"></script>
   <script defer src="/static/js/local-charts.js"></script>
   <script defer src="/static/js/app.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/" aria-label="Página inicial"><span class="brand-mark">R$</span><span>Casa em ordem<small>Finanças da família</small></span></a>
-    <div class="top-actions">
-      <span class="top-date">{{ today.strftime('%d/%m/%Y') }}</span>
-      {% if current_user %}<a class="top-action" href="/alterar-senha">{{ current_user.username }}</a>{% if current_user.is_admin %}<a class="top-action" href="/usuarios">Usuários</a>{% endif %}<form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="top-action" type="submit">Sair</button></form>{% endif %}
-    </div>
-  </header>
-  <nav class="nav-grid" aria-label="Navegação principal">
-    <a class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}" href="/">Visão geral</a>
-    <a class="nav-item {% if active_nav == 'transacoes' %}active{% endif %}" href="/transacoes">Gastos</a>
-    <a class="nav-item {% if active_nav == 'fixos' %}active{% endif %}" href="/transacoes/fixos">Gastos fixos</a>
-    <a class="nav-item {% if active_nav == 'planejados' %}active{% endif %}" href="/planejados">Planejados</a>
-    <a class="nav-item {% if active_nav == 'receitas' %}active{% endif %}" href="/receitas">Receitas</a>
-    <a class="nav-item {% if active_nav == 'cartoes' %}active{% endif %}" href="/cartoes">Faturas</a>
-    <a class="nav-item {% if active_nav == 'poupanca' %}active{% endif %}" href="/poupanca">Poupança</a>
-    <a class="nav-item {% if active_nav == 'orcamento' %}active{% endif %}" href="/orcamento">Orçamento</a>
-    <a class="nav-item {% if active_nav == 'projecao' %}active{% endif %}" href="/projecao">Projeção</a>
-    <a class="nav-item {% if active_nav == 'historico' %}active{% endif %}" href="/historico">Histórico</a>
-    <a class="nav-item {% if active_nav == 'relatorios' %}active{% endif %}" href="/relatorios">Relatórios</a>
-    <a class="nav-item {% if active_nav == 'cadastros' %}active{% endif %}" href="/cadastros">Cadastros</a>
-    {% if current_user and current_user.is_admin %}<a class="nav-item {% if request.url.path.startswith('/usuarios') %}active{% endif %}" href="/usuarios">Usuários</a>{% endif %}
-  </nav>
-  <main class="container">
-    {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
-    {% if ok %}<div class="notice success">Alterações salvas.</div>{% endif %}
-    {% block content %}{% endblock %}
-  </main>
-  <footer class="footer">Dados guardados localmente neste dispositivo/rede · Valores em reais (BRL)</footer>
+  <aside class="sidebar" id="app-sidebar" aria-label="Menu principal">
+    <a class="sidebar-brand" href="/" aria-label="Casa em Ordem — página inicial">
+      <span class="brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/><path d="M9.5 10.5h5"/></svg></span>
+      <span class="brand-copy"><strong>Casa em Ordem</strong><small>FINANÇAS DA FAMÍLIA</small></span>
+    </a>
+    <div class="sidebar-caption">MENU PRINCIPAL</div>
+    <nav class="sidebar-nav" aria-label="Navegação principal">
+      <a class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}" href="/" title="Visão geral" {% if active_nav == 'dashboard' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="10" width="8" height="11" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/></svg></span><span class="nav-label">Visão geral</span></a>
+      <a class="nav-item {% if active_nav == 'transacoes' %}active{% endif %}" href="/transacoes" title="Gastos" {% if active_nav == 'transacoes' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M7 7h13m0 0-4-4m4 4-4 4M17 17H4m0 0 4-4m-4 4 4 4"/></svg></span><span class="nav-label">Gastos</span></a>
+      <a class="nav-item {% if active_nav == 'fixos' %}active{% endif %}" href="/transacoes/fixos" title="Gastos fixos" {% if active_nav == 'fixos' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18M8 14h3m-3 3h6"/></svg></span><span class="nav-label">Gastos fixos</span></a>
+      <a class="nav-item {% if active_nav == 'planejados' %}active{% endif %}" href="/planejados" title="Planejados" {% if active_nav == 'planejados' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/></svg></span><span class="nav-label">Planejados</span></a>
+      <a class="nav-item {% if active_nav == 'receitas' %}active{% endif %}" href="/receitas" title="Receitas" {% if active_nav == 'receitas' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/><path d="M4 21h16"/></svg></span><span class="nav-label">Receitas</span></a>
+      <a class="nav-item {% if active_nav == 'cartoes' %}active{% endif %}" href="/cartoes" title="Cartões e faturas" {% if active_nav == 'cartoes' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="3"/><path d="M3 9h18M7 15h4"/></svg></span><span class="nav-label">Cartões e faturas</span></a>
+      <a class="nav-item {% if active_nav == 'poupanca' %}active{% endif %}" href="/poupanca" title="Poupança" {% if active_nav == 'poupanca' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M5 9 3 6m16 3 2-3M4 14c0-4 3-7 8-7s8 3 8 7-3 7-8 7-8-3-8-7Z"/><path d="M8 13h.01M16 13h.01M10 17h4"/><path d="M12 7V4h4"/></svg></span><span class="nav-label">Poupança</span></a>
+      <a class="nav-item {% if active_nav == 'orcamento' %}active{% endif %}" href="/orcamento" title="Orçamento" {% if active_nav == 'orcamento' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20V10m8 10V4m8 16v-7"/><path d="M2 20h20"/></svg></span><span class="nav-label">Orçamento</span></a>
+      <a class="nav-item {% if active_nav == 'projecao' %}active{% endif %}" href="/projecao" title="Projeção" {% if active_nav == 'projecao' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="m3 17 6-6 4 3 8-9"/><path d="M15 5h6v6"/></svg></span><span class="nav-label">Projeção</span></a>
+      <a class="nav-item {% if active_nav == 'historico' %}active{% endif %}" href="/historico" title="Histórico" {% if active_nav == 'historico' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5m4-1v5l4 2"/></svg></span><span class="nav-label">Histórico</span></a>
+      <a class="nav-item {% if active_nav == 'relatorios' %}active{% endif %}" href="/relatorios" title="Relatórios" {% if active_nav == 'relatorios' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 20h16M6 17V9m6 8V4m6 13v-5"/><path d="M4 4h2"/></svg></span><span class="nav-label">Relatórios e backup</span></a>
+      <a class="nav-item {% if active_nav == 'cadastros' %}active{% endif %}" href="/cadastros" title="Cadastros" {% if active_nav == 'cadastros' %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M19 8v8m-4-4h8"/></svg></span><span class="nav-label">Cadastros</span></a>
+      {% if current_user and current_user.is_admin %}<a class="nav-item {% if request.url.path.startswith('/usuarios') %}active{% endif %}" href="/usuarios" title="Usuários" {% if request.url.path.startswith('/usuarios') %}aria-current="page"{% endif %}><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M19 8v8m-4-4h8"/></svg></span><span class="nav-label">Usuários</span></a>{% endif %}
+    </nav>
+    <div class="sidebar-bottom"><span class="sidebar-status-dot"></span><span class="nav-label">Banco local protegido</span></div>
+  </aside>
+  <button class="sidebar-overlay" id="sidebar-overlay" type="button" aria-label="Fechar menu" tabindex="-1"></button>
+  <div class="app-main">
+    <header class="topbar">
+      <button type="button" class="icon-button menu-toggle" id="sidebar-toggle" aria-label="Abrir menu" aria-controls="app-sidebar" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <div class="topbar-heading"><span class="topbar-overline">FINANÇAS FAMILIARES</span><strong>{% if active_nav == 'dashboard' %}Visão geral{% elif active_nav == 'transacoes' %}Gastos{% elif active_nav == 'fixos' %}Gastos fixos{% elif active_nav == 'planejados' %}Planejados{% elif active_nav == 'receitas' %}Receitas{% elif active_nav == 'cartoes' %}Cartões e faturas{% elif active_nav == 'poupanca' %}Poupança{% elif active_nav == 'orcamento' %}Orçamento{% elif active_nav == 'projecao' %}Projeção financeira{% elif active_nav == 'historico' %}Histórico{% elif active_nav == 'relatorios' %}Relatórios{% elif active_nav == 'cadastros' %}Cadastros{% elif request.url.path.startswith('/usuarios') %}Usuários{% else %}Casa em Ordem{% endif %}</strong></div>
+      <div class="top-actions">
+        <span class="top-date"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18"/></svg>{{ today.strftime('%d/%m/%Y') }}</span>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Alternar tema" title="Alternar tema"><svg class="theme-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg><span class="theme-text">Material Light</span></button>
+        {% if current_user %}<a class="top-action user-chip" href="/alterar-senha"><span class="user-avatar">{{ current_user.username[:1]|upper }}</span><span class="user-name">{{ current_user.username }}</span></a>{% if current_user.is_admin %}<a class="top-action admin-shortcut" href="/usuarios" title="Gerenciar usuários"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M19 8v8m-4-4h8"/></svg></a>{% endif %}<form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="top-action logout-action" type="submit" title="Sair"><svg viewBox="0 0 24 24"><path d="M10 17l5-5-5-5m5 5H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></svg><span>Sair</span></button></form>{% endif %}
+      </div>
+    </header>
+    <main class="container">
+      {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
+      {% if ok %}<div class="notice success">Alterações salvas.</div>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="footer"><span class="footer-dot"></span> Seus dados financeiros · BRL · Armazenados localmente</footer>
+  </div>
 </body>
 </html>
-````
+```
 
 ## `app/templates/budgets.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}Orçamento mensal · Casa em ordem{% endblock %}
 {% block content %}
@@ -2566,24 +3171,31 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 <form class="panel form-panel" method="post" action="/orcamento"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><h2>Definir orçamento por categoria</h2><div class="form-grid"><input type="hidden" name="mes" value="{{ mes }}"><label class="field">Categoria<select name="category_id" required>{% for c in category_options %}<option value="{{ c.id }}">{{ c.label }}</option>{% endfor %}</select></label><label class="field">Valor mensal (R$)<input name="amount" inputmode="decimal" placeholder="0,00" required></label></div><div class="form-actions"><button class="button" type="submit">Salvar orçamento</button></div></form>
 <section class="panel"><div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Orçamento</th><th>Realizado</th><th>Uso</th><th></th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.label }}</td><td>{{ row.budget.amount_cents|brl }}</td><td>{{ row.spent|brl }}</td><td><div class="budget-cell"><div class="progress"><span class="{% if row.over %}over{% endif %}" style="width:{{ row.percent if row.percent < 100 else 100 }}%"></span></div><small class="{% if row.over %}danger-text{% endif %}">{{ row.percent }}%{% if row.over %} · excedido{% endif %}</small></div></td><td><form method="post" action="/orcamento/{{ row.budget.id }}/excluir" onsubmit="return confirm('Excluir este orçamento?')"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="text-button danger-text">Excluir</button></form></td></tr>{% else %}<tr><td colspan="5" class="empty-cell">Nenhum orçamento cadastrado neste mês.</td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}
-````
+```
 
 ## `app/templates/cards.html`
 
-````html
+```html
 {% extends "base.html" %}
-{% block title %}Faturas de cartão · Casa em ordem{% endblock %}
+{% block title %}Cartões e faturas · Casa em Ordem{% endblock %}
 {% block content %}
-<section class="page-head"><div><p class="eyebrow">CARTÕES DE CRÉDITO</p><h1>Faturas</h1><p class="muted">A fatura é agrupada pelo vencimento calculado a partir da data de fechamento.</p></div><a class="button button-light" href="/cadastros">Gerenciar cartões</a></section>
-<form class="filter-bar" method="get"><label for="mes">Mês do vencimento</label><input id="mes" type="month" name="mes" value="{{ mes }}"><label for="cartao">Cartão</label><select id="cartao" name="cartao"><option value="">Selecione cartão</option>{% for c in all_cards %}<option value="{{ c.id }}" {% if selected_card and selected_card.id == c.id %}selected{% endif %}>{{ c.name }} · {{ c.owner.name }}</option>{% endfor %}</select><button class="button button-light">Ver fatura</button></form>
-{% if selected_card %}<section class="metric-grid metric-grid-two"><article class="metric"><span>Cartão / titular</span><strong>{{ selected_card.name }}</strong><small>{{ selected_card.owner.name }} · fecha dia {{ selected_card.closing_day }} · vence dia {{ selected_card.due_day }}</small></article><article class="metric"><span>Total previsto da fatura</span><strong>{{ total|brl }}</strong><small>Limite cadastrado: {{ selected_card.limit_cents|brl }}</small></article></section>
-<section class="panel"><div class="panel-heading"><div><h2>Itens da fatura — {{ mes[5:7] }}/{{ mes[:4] }}</h2><p class="muted">Os lançamentos usam a data da compra nos relatórios de categoria.</p></div></div><div class="table-wrap"><table><thead><tr><th>Vencimento</th><th>Compra / descrição</th><th>Categoria</th><th>Responsável</th><th>Status</th><th>Valor</th><th></th></tr></thead><tbody>{% for item in items %}<tr><td>{{ item.cashflow_date|date_br }}</td><td>{{ item.purchase_date|date_br }}<small class="subline">{{ item.description }}</small>{% if item.installment_number %}<small class="subline">Parcela {{ item.installment_number }}/{{ item.installment_count }}</small>{% endif %}</td><td>{{ item.category.name }}</td><td>{{ item.person.name }}</td><td><span class="status status-{{ item.status }}">{{ item.status }}</span></td><td class="money">{{ item.amount_cents|brl }}</td><td><a class="text-link" href="/transacoes/{{ item.id }}/editar">Editar</a></td></tr>{% else %}<tr><td colspan="7" class="empty-cell">Nenhuma compra nesta fatura.</td></tr>{% endfor %}</tbody><tfoot><tr><th colspan="5">Total da fatura</th><th>{{ total|brl }}</th><th></th></tr></tfoot></table></div></section>{% else %}<div class="empty-state">Cadastre um cartão em Cadastros para consultar faturas.</div>{% endif %}
+<section class="page-head"><div><p class="eyebrow">CARTEIRA FAMILIAR</p><h1>Cartões e faturas</h1><p class="muted">Uma visão rápida dos cartões da família e dos compromissos de crédito.</p></div><a class="button button-light" href="/cadastros">＋ Gerenciar cartões</a></section>
+<section class="wallet-section"><div class="section-heading"><div><h2>Seus cartões</h2><p class="muted">Os números completos não são armazenados, apenas os quatro últimos dígitos.</p></div><span class="wallet-count">{{ all_cards|length }} cartão(ões)</span></div>
+  {% if all_cards %}<div class="bank-card-grid">{% for card in all_cards %}{% include "partials/bank_card.html" %}{% endfor %}</div>{% else %}<div class="empty-state">Nenhum cartão cadastrado. <a href="/cadastros">Adicionar cartão</a></div>{% endif %}
+</section>
+<section class="invoice-section section-gap">
+  <div class="section-heading"><div><p class="eyebrow">CONTROLE DE CRÉDITO</p><h2>Consultar fatura</h2><p class="muted">A fatura é agrupada pelo vencimento calculado a partir do fechamento.</p></div></div>
+  {% if credit_cards %}<form class="filter-bar invoice-filter" method="get"><label for="mes">Mês de vencimento</label><input id="mes" type="month" name="mes" value="{{ mes }}"><label for="cartao">Cartão de crédito</label><select id="cartao" name="cartao">{% for c in credit_cards %}<option value="{{ c.id }}" {% if selected_card and selected_card.id == c.id %}selected{% endif %}>{{ c.name }} · {{ c.owner.name }}{% if c.last_four_digits %} · •••• {{ c.last_four_digits }}{% endif %}</option>{% endfor %}</select><button class="button" type="submit">Ver fatura</button></form>
+  {% if selected_card %}<div class="invoice-summary"><div class="invoice-card-mini">{% set card = selected_card %}{% include "partials/bank_card.html" %}</div><article class="metric invoice-total-metric"><span>Total previsto da fatura</span><strong>{{ total|brl }}</strong><small>Limite cadastrado: {{ selected_card.limit_cents|brl }}</small><div class="invoice-meta"><span>Fecha dia {{ selected_card.closing_day }}</span><span>Vence dia {{ selected_card.due_day }}</span></div></article></div>
+  <section class="panel invoice-table-panel"><div class="panel-heading"><div><h2>Itens da fatura — {{ mes[5:7] }}/{{ mes[:4] }}</h2><p class="muted">Relatórios de categoria usam a data da compra; fluxo de caixa, o vencimento.</p></div><span class="invoice-item-count">{{ items|length }} item(ns)</span></div><div class="table-wrap"><table><thead><tr><th>Compra / descrição</th><th>Categoria</th><th>Responsável</th><th>Vencimento</th><th>Status</th><th class="money">Valor</th><th></th></tr></thead><tbody>{% for item in items %}<tr><td>{{ item.description }}<small class="subline">Compra em {{ item.purchase_date|date_br }}</small>{% if item.installment_number %}<small class="subline">Parcela {{ item.installment_number }}/{{ item.installment_count }}</small>{% endif %}</td><td>{{ item.category.name }}</td><td>{{ item.person.name }}</td><td>{{ item.cashflow_date|date_br }}</td><td><span class="status status-{{ item.status }}">{{ item.status }}</span></td><td class="money">{{ item.amount_cents|brl }}</td><td><a class="text-link" href="/transacoes/{{ item.id }}/editar">Editar</a></td></tr>{% else %}<tr><td colspan="7" class="empty-cell">Nenhuma compra nesta fatura.</td></tr>{% endfor %}</tbody><tfoot><tr><th colspan="5">Total da fatura</th><th class="money">{{ total|brl }}</th><th></th></tr></tfoot></table></div></section>{% endif %}
+  {% else %}<div class="empty-state">Não há cartões de crédito ativos. Cartões de débito e Vale Alimentação aparecem acima e lançam a saída na data da compra.</div>{% endif %}
+</section>
 {% endblock %}
-````
+```
 
 ## `app/templates/change_password.html`
 
-````html
+```html
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -2614,54 +3226,50 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
   </main>
 </body>
 </html>
-````
+```
 
 ## `app/templates/dashboard.html`
 
-````html
+```html
 {% extends "base.html" %}
-{% block title %}Visão geral · Casa em ordem{% endblock %}
+{% block title %}Visão geral · Casa em Ordem{% endblock %}
 {% block content %}
-<section class="page-head">
-  <div><p class="eyebrow">PAINEL FAMILIAR</p><h1>Visão geral</h1><p class="muted">Receitas e compromissos de {{ '%02d'|format(month) }}/{{ year }}</p></div>
-  <form class="month-form" method="get" action="/"><label for="mes">Mês</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button" type="submit">Ver mês</button></form>
+<section class="page-head dashboard-head">
+  <div><p class="eyebrow">PAINEL FINANCEIRO</p><h1>Bom dia, família <span class="headline-spark">✦</span></h1><p class="muted">Aqui está o resumo de {{ '%02d'|format(month) }}/{{ year }}.</p></div>
+  <form class="month-form" method="get" action="/"><label for="mes">Período</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button" type="submit">Atualizar</button></form>
 </section>
-<section class="metric-grid">
-  <article class="metric"><span>Receitas no fluxo</span><strong>{{ income_total|brl }}</strong><small>{{ income_count }} lançamento(s)</small></article>
-  <article class="metric"><span>Despesas previstas no caixa</span><strong>{{ expense_total|brl }}</strong><small>{{ expense_count }} lançamento(s), cartão pelo vencimento</small></article>
-  <article class="metric {% if balance < 0 %}metric-danger{% else %}metric-good{% endif %}"><span>Saldo previsto do mês</span><strong>{{ balance|brl }}</strong><small>Receitas menos compromissos</small></article>
-  <article class="metric"><span>Orçamento já usado</span><strong>{% if budget_total %}{{ (actual_budgeted * 100 // budget_total) }}%{% else %}—{% endif %}</strong><small>{{ actual_budgeted|brl }} de {{ budget_total|brl }}</small></article>
+<section class="metric-grid dashboard-metrics">
+  <article class="metric metric-income"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/><path d="M4 21h16"/></svg></span><span class="metric-label">Entradas no mês</span></div><strong>{{ income_total|brl }}</strong><small><span class="metric-dot"></span>{{ income_count }} lançamento(s) no fluxo de caixa</small><div class="metric-comparison {% if income_total >= prev_income %}up{% else %}down{% endif %}">{% if income_total >= prev_income %}↑{% else %}↓{% endif %} {{ ((income_total-prev_income)*100//prev_income if prev_income else (100 if income_total else 0))|abs }}% <span>vs. mês anterior</span></div></article>
+  <article class="metric metric-expense"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><path d="M12 5v14m6-6-6 6-6-6"/><path d="M4 3h16"/></svg></span><span class="metric-label">Saídas no mês</span></div><strong>{{ expense_total|brl }}</strong><small><span class="metric-dot"></span>{{ expense_count }} compromisso(s), cartão pelo vencimento</small><div class="metric-comparison {% if expense_total <= prev_expense %}up{% else %}down{% endif %}">{% if expense_total <= prev_expense %}↓{% else %}↑{% endif %} {{ ((expense_total-prev_expense)*100//prev_expense if prev_expense else (100 if expense_total else 0))|abs }}% <span>vs. mês anterior</span></div></article>
+  <article class="metric {% if balance < 0 %}metric-danger{% else %}metric-balance{% endif %}"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18m-13 5h4"/></svg></span><span class="metric-label">Saldo previsto</span></div><strong>{{ balance|brl }}</strong><small><span class="metric-dot"></span>Entradas menos compromissos do mês</small><div class="metric-comparison {% if balance >= prev_balance %}up{% else %}down{% endif %}">{% if balance >= prev_balance %}↑{% else %}↓{% endif %} {{ ((balance-prev_balance)*100//(prev_balance if prev_balance else 1))|abs }}% <span>vs. saldo anterior</span></div></article>
 </section>
-<section class="section-heading"><div><h2>Comparação com o mês anterior</h2><p class="muted">Fluxo de caixa estimado no mesmo critério</p></div></section>
-<div class="compare-grid">
-  <div class="compare-card"><span>Receitas anteriores</span><b>{{ prev_income|brl }}</b><small>Saldo atual de receitas: {{ (income_total - prev_income)|brl }} de diferença</small></div>
-  <div class="compare-card"><span>Despesas anteriores</span><b>{{ prev_expense|brl }}</b><small>Saldo anterior: {{ prev_balance|brl }}</small></div>
-</div>
-<section class="section-heading"><div><h2>Visão por gráficos</h2><p class="muted">Gráficos locais; funcionam sem internet.</p></div></section>
-<section class="chart-grid">
-  <article class="panel chart-panel"><h3>Despesas por categoria</h3><p class="muted">Compras realizadas na data selecionada</p><div class="chart-wrap"><canvas id="chart-pie" aria-label="Despesas por categoria"></canvas></div><p class="empty-hint" id="pie-empty" hidden>Sem despesas realizadas neste mês.</p></article>
-  <article class="panel chart-panel"><h3>Receitas x despesas</h3><p class="muted">Últimos 12 meses pelo fluxo de caixa</p><div class="chart-wrap"><canvas id="chart-bars" aria-label="Receitas comparadas com despesas"></canvas></div></article>
-  <article class="panel chart-panel"><h3>Evolução do saldo</h3><p class="muted">Saldo acumulado relativo dos 12 meses</p><div class="chart-wrap"><canvas id="chart-line" aria-label="Evolução do saldo acumulado"></canvas></div></article>
-  <article class="panel chart-panel"><h3>Faturas por cartão</h3><p class="muted">Compromissos por mês de vencimento · 6 meses</p><div class="chart-wrap"><canvas id="chart-cards" aria-label="Despesas por cartão"></canvas></div></article>
+<section class="panel cashflow-panel">
+  <div class="panel-heading cashflow-heading"><div><p class="eyebrow">FLUXO DE CAIXA</p><h2>Entradas x saídas</h2><p class="muted">Comparativo mensal dos últimos 12 meses · valores em reais</p></div><span class="chart-period"><span class="chart-status-dot"></span>12 meses</span></div>
+  <div class="cashflow-legend"><span><i class="legend-income"></i> Entradas</span><span><i class="legend-expense"></i> Saídas</span></div>
+  <div class="chart-wrap cashflow-chart-wrap"><canvas id="chart-cashflow" aria-label="Gráfico de linhas comparando entradas e saídas do fluxo de caixa nos últimos doze meses"></canvas></div>
+  <div class="cashflow-footer"><span><small>Diferença no mês selecionado</small><strong class="{% if balance < 0 %}negative-value{% else %}positive-value{% endif %}">{{ balance|brl }}</strong></span><span><small>Despesas vs. mês anterior</small><strong>{% if expense_total > prev_expense %}+{% elif expense_total < prev_expense %}−{% endif %}{{ ((expense_total-prev_expense)|abs)|brl }}</strong></span></div>
+</section>
+<section class="dashboard-lower-grid section-gap">
+  <article class="panel chart-panel"><div class="panel-heading"><div><h2>Gastos por categoria</h2><p class="muted">Compras realizadas em {{ '%02d'|format(month) }}/{{ year }}</p></div><a class="text-link" href="/historico?mes={{ mes }}">Detalhes ↗</a></div><div class="chart-wrap"><canvas id="chart-pie" aria-label="Gastos por categoria"></canvas></div><p class="empty-hint" id="pie-empty" hidden>Sem despesas realizadas neste mês.</p></article>
+  <article class="panel chart-panel"><div class="panel-heading"><div><h2>Evolução do saldo</h2><p class="muted">Saldo acumulado relativo nos 12 meses</p></div><a class="text-link" href="/projecao">Projeção ↗</a></div><div class="chart-wrap"><canvas id="chart-line" aria-label="Evolução do saldo acumulado"></canvas></div></article>
+  <article class="panel chart-panel card-chart-panel"><div class="panel-heading"><div><h2>Uso por cartão</h2><p class="muted">Saídas agrupadas por cartão · últimos 6 meses</p></div><a class="text-link" href="/cartoes">Cartões ↗</a></div><div class="chart-wrap"><canvas id="chart-cards" aria-label="Despesas por cartão"></canvas></div></article>
 </section>
 <section class="content-grid section-gap">
-  <article class="panel"><div class="panel-heading"><div><h2>Próximos vencimentos</h2><p class="muted">Até 45 dias · sem duplicar fatura</p></div><a class="text-link" href="/planejados">Ver planejados</a></div>
-    <div id="upcoming-list" hx-get="/partials/proximos" hx-trigger="load" hx-swap="innerHTML"><p class="muted">Carregando vencimentos…</p></div>
-  </article>
-  <article class="panel"><div class="panel-heading"><div><h2>Orçamento por categoria</h2><p class="muted">Considera gastos realizados na data da compra</p></div><a class="text-link" href="/orcamento?mes={{ mes }}">Gerenciar</a></div>
+  <article class="panel"><div class="panel-heading"><div><h2>Próximos vencimentos</h2><p class="muted">Até 45 dias · faturas sem dupla contagem</p></div><a class="text-link" href="/planejados">Ver planejados ↗</a></div><div id="upcoming-list" hx-get="/partials/proximos" hx-trigger="load" hx-swap="innerHTML"><p class="muted">Carregando vencimentos…</p></div></article>
+  <article class="panel"><div class="panel-heading"><div><h2>Orçamento por categoria</h2><p class="muted">Despesas realizadas pela data da compra</p></div><a class="text-link" href="/orcamento?mes={{ mes }}">Gerenciar ↗</a></div>
     {% if budget_rows %}<div class="budget-list">{% for item in budget_rows %}<div class="budget-row"><div class="row-between"><span>{{ item.name }}</span><strong>{{ item.spent|brl }} / {{ item.amount|brl }}</strong></div><div class="progress"><span class="{% if item.over %}over{% endif %}" style="width:{{ item.percent if item.percent < 100 else 100 }}%"></span></div><small class="{% if item.over %}danger-text{% else %}muted{% endif %}">{% if item.over %}Orçamento excedido em {{ (item.spent-item.amount)|brl }}{% else %}{{ item.percent }}% utilizado{% endif %}</small></div>{% endfor %}</div>{% else %}<div class="empty-state">Nenhum orçamento cadastrado para este mês. <a href="/orcamento?mes={{ mes }}">Criar orçamento</a></div>{% endif %}
   </article>
 </section>
-<section class="panel"><div class="panel-heading"><div><h2>Categorias com maior gasto</h2><p class="muted">Variação comparada ao mês anterior</p></div><a class="text-link" href="/historico?mes={{ mes }}">Resumo do mês</a></div>
+<section class="panel section-gap"><div class="panel-heading"><div><h2>Categorias com maior gasto</h2><p class="muted">Variação comparada ao mês anterior</p></div><a class="text-link" href="/historico?mes={{ mes }}">Resumo do mês ↗</a></div>
   {% if ranking %}<div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Este mês</th><th>Mês anterior</th><th>Variação</th></tr></thead><tbody>{% for item in ranking %}<tr><td>{{ item.name }}</td><td>{{ item.amount|brl }}</td><td>{{ item.previous|brl }}</td><td><span class="change {% if item.delta > 0 %}danger-text{% elif item.delta < 0 %}good-text{% endif %}">{% if item.delta > 0 %}+{% endif %}{{ item.delta }}%</span></td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty-state">Registre despesas realizadas para montar o ranking.</p>{% endif %}
 </section>
 <script id="chart-data" type="application/json">{{ chart_payload|tojson }}</script>
 {% endblock %}
-````
+```
 
 ## `app/templates/fixed.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}Gastos fixos · Casa em ordem{% endblock %}
 {% block content %}
@@ -2682,11 +3290,11 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 <label class="field">Situação<select name="active"><option value="sim" {% if item.active %}selected{% endif %}>Ativa</option><option value="nao" {% if not item.active %}selected{% endif %}>Inativa</option></select></label><div class="form-actions"><button class="button button-small" type="submit">Salvar regra</button></div>
 </form></details>{% endfor %}</div>{% else %}<div class="empty-state">Cadastre aqui colégio, internet, seguro e outros compromissos mensais.</div>{% endif %}
 {% endblock %}
-````
+```
 
 ## `app/templates/history.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}Resumo mensal · Casa em ordem{% endblock %}
 {% block content %}
@@ -2700,11 +3308,11 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 </div>
 <section class="panel"><h2>Maiores gastos do mês</h2><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pessoa</th><th>Cartão</th><th>Valor</th></tr></thead><tbody>{% for item in top_expenses %}<tr><td>{{ item.purchase_date|date_br }}</td><td>{{ item.description }}</td><td>{{ item.category.name }}</td><td>{{ item.person.name }}</td><td>{{ item.card.name if item.card else '—' }}</td><td class="money">{{ item.amount_cents|brl }}</td></tr>{% else %}<tr><td class="empty-cell" colspan="6">Sem gastos realizados neste mês.</td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}
-````
+```
 
 ## `app/templates/incomes.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}Receitas · Casa em ordem{% endblock %}
 {% block content %}
@@ -2719,11 +3327,11 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 <section class="section-heading"><div><h2>Lançamentos de {{ mes[5:7] }}/{{ mes[:4] }}</h2></div></section>
 <div class="panel"><div class="table-wrap"><table><thead><tr><th>Data</th><th>Pessoa</th><th>Tipo / descrição</th><th>Tratamento</th><th>Valor</th><th></th></tr></thead><tbody>{% for item in rows %}<tr><td>{{ item.happened_on|date_br }}</td><td>{{ item.person.name }}</td><td>{{ kinds[item.kind] }}<small class="subline">{{ item.description }}</small></td><td>{% if item.included_in_cashflow %}<span class="status status-realizado">No fluxo</span>{% else %}<span class="status status-previsto">Informativo</span>{% endif %}</td><td class="money">{{ item.amount_cents|brl }}</td><td><form method="post" action="/receitas/{{ item.id }}/excluir" onsubmit="return confirm('Excluir este lançamento?')"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="text-button danger-text" type="submit">Excluir</button></form></td></tr>{% else %}<tr><td class="empty-cell" colspan="6">Nenhum lançamento neste mês.</td></tr>{% endfor %}</tbody></table></div></div>
 {% endblock %}
-````
+```
 
 ## `app/templates/login.html`
 
-````html
+```html
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -2754,19 +3362,37 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
   </main>
 </body>
 </html>
-````
+```
+
+## `app/templates/partials/bank_card.html`
+
+```html
+{% set card_name_lc = card.name|lower %}
+{% if 'nubank' in card_name_lc %}{% set card_brand = 'nubank' %}{% set card_issuer = 'Nubank' %}
+{% elif 'santander' in card_name_lc %}{% set card_brand = 'santander' %}{% set card_issuer = 'Santander' %}
+{% elif 'bradesco' in card_name_lc %}{% set card_brand = 'bradesco' %}{% set card_issuer = 'Bradesco' %}
+{% elif 'ticket' in card_name_lc %}{% set card_brand = 'ticket' %}{% set card_issuer = 'Ticket' %}
+{% elif 'clear' in card_name_lc %}{% set card_brand = 'clear' %}{% set card_issuer = 'Clear' %}
+{% else %}{% set card_brand = 'generic' %}{% set card_issuer = 'Cartão' %}{% endif %}
+<article class="bank-card bank-card-{{ card_brand }}">
+  <div class="bank-card-head"><span class="bank-card-issuer">{{ card_issuer }}</span><span class="bank-card-kind">{% if card.kind == 'credito' %}CRÉDITO{% elif card.kind == 'vale_alimentacao' %}VALE ALIMENTAÇÃO{% else %}DÉBITO{% endif %}</span></div>
+  <div class="bank-card-chip" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+  <div class="bank-card-number" aria-label="Final do cartão {{ card.last_four_digits if card.last_four_digits else 'não informado' }}">•••• &nbsp;•••• &nbsp;•••• &nbsp;<strong>{{ card.last_four_digits if card.last_four_digits else '••••' }}</strong></div>
+  <div class="bank-card-foot"><div><small>TITULAR</small><strong>{{ card.owner.name }}</strong></div><div class="bank-card-label"><small>CARTÃO</small><strong>{{ card.name }}</strong></div></div>
+</article>
+```
 
 ## `app/templates/partials/upcoming_rows.html`
 
-````html
+```html
 {% if rows %}
 <div class="upcoming-list">{% for item in rows %}<div class="upcoming-item"><div class="upcoming-date"><b>{{ item.cashflow_date.strftime('%d') }}</b><small>{{ item.cashflow_date.strftime('%m/%Y') }}</small></div><div class="upcoming-detail"><b>{{ item.description }}</b><small>{{ item.person.name }} · {% if item.card %}{{ item.card.name }}{% elif item.account %}{{ item.account.name }}{% else %}Sem conta/cartão{% endif %}</small><small>{{ item.category.name }}</small></div><div class="upcoming-value"><b>{{ item.amount_cents|brl }}</b><span class="status status-{{ item.status }}">{{ item.status }}</span></div></div>{% endfor %}</div>
 {% else %}<div class="empty-state">Nenhum vencimento previsto para os próximos 45 dias.</div>{% endif %}
-````
+```
 
 ## `app/templates/planned.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}Gastos planejados · Casa em ordem{% endblock %}
 {% block content %}
@@ -2776,11 +3402,11 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 {% else %}<tr><td colspan="6" class="empty-cell">Nenhum gasto com status previsto.</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% endblock %}
-````
+```
 
 ## `app/templates/projection.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}Projeção · Casa em ordem{% endblock %}
 {% block content %}
@@ -2788,11 +3414,11 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
 <div class="panel"><div class="table-wrap"><table><thead><tr><th>Mês</th><th>Receitas cadastradas</th><th>Despesas/compromissos</th><th>Saldo previsto</th></tr></thead><tbody>{% for row in months %}<tr><td><b>{{ row.name }}</b></td><td>{{ row.income|brl }}</td><td>{{ row.expenses|brl }}</td><td class="money {% if row.balance < 0 %}danger-text{% else %}good-text{% endif %}">{{ row.balance|brl }}</td></tr>{% endfor %}</tbody></table></div></div>
 <div class="notice info">A projeção não presume um salário futuro automaticamente: cadastre entradas com a data esperada para que apareçam no mês correspondente. Despesas fixas ativas são geradas automaticamente.</div>
 {% endblock %}
-````
+```
 
 ## `app/templates/registrations.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}Cadastros · Casa em ordem{% endblock %}
 {% block content %}
@@ -2834,12 +3460,13 @@ tfoot th { text-transform: none; font-size: 12px; color: var(--ink); }
     <label class="field">Nome do cartão<input name="name" required placeholder="Ex.: Visa principal"></label>
     <label class="field">Titular<select name="owner_id" required>{% for p in people if p.name != 'Família' and p.active %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
     <label class="field">Tipo<select name="kind" id="registration-card-kind"><option value="credito">Cartão de crédito</option><option value="debito">Cartão de débito</option><option value="vale_alimentacao">Vale Alimentação (débito)</option></select></label>
+    <label class="field">4 últimos dígitos <small>Não informe o número completo do cartão.</small><input name="last_four_digits" inputmode="numeric" autocomplete="off" pattern="[0-9]{4}" minlength="4" maxlength="4" placeholder="1234"></label>
     <div class="form-grid" id="card-cycle-fields"><label class="field">Fecha dia<input type="number" name="closing_day" min="1" max="31" value="10"></label><label class="field">Vence dia<input type="number" name="due_day" min="1" max="31" value="17"></label></div>
     <label class="field">Limite / valor de referência (R$)<input name="limit" value="0,00" inputmode="decimal"></label>
     <label class="field">Conta usada para pagar a fatura (opcional)<select name="payment_account_id"><option value="">Não definida</option>{% for a in all_accounts if a.active %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></label>
     <button class="button button-small" type="submit">Adicionar cartão</button>
   </form>
-  <div class="simple-list">{% for c in all_cards %}<div><span>{{ c.name }}<small>{{ c.owner.name }} · {% if c.kind == 'credito' %}Crédito · fecha dia {{ c.closing_day }} · vence dia {{ c.due_day }}{% elif c.kind == 'vale_alimentacao' %}Vale Alimentação (débito) · sem fatura{% else %}Débito · sem fatura{% endif %}</small></span><b>{% if c.kind == 'credito' %}Limite {% else %}Referência {% endif %}{{ c.limit_cents|brl }}</b></div>{% else %}<p class="muted">Nenhum cartão cadastrado.</p>{% endfor %}</div>
+  <div class="registration-card-list">{% for c in all_cards %}<div class="registration-card-entry"><div class="registration-card-visual">{% set card = c %}{% include "partials/bank_card.html" %}</div><div class="registration-card-edit"><div><strong>{{ c.name }}</strong><small>{{ c.owner.name }} · {% if c.kind == 'credito' %}Crédito · fecha dia {{ c.closing_day }} · vence dia {{ c.due_day }}{% elif c.kind == 'vale_alimentacao' %}Vale Alimentação · débito{% else %}Débito{% endif %}</small></div><form method="post" action="/cadastros/cartoes/{{ c.id }}/editar" class="last-four-form"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><label class="field">4 últimos dígitos<input name="last_four_digits" value="{{ c.last_four_digits }}" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" placeholder="1234"></label><button class="button button-small" type="submit">Salvar</button></form></div></div>{% else %}<p class="muted">Nenhum cartão cadastrado.</p>{% endfor %}</div>
   <p class="muted compact-copy">Débito e Vale Alimentação não pedem fechamento ou vencimento; as compras entram no fluxo de caixa na data da compra.</p>
 </section>
 </div>
@@ -2857,11 +3484,11 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endblock %}
-````
+```
 
 ## `app/templates/reports.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}Relatórios e backup · Casa em ordem{% endblock %}
 {% block content %}
@@ -2869,11 +3496,11 @@ document.addEventListener('DOMContentLoaded', function () {
 <section class="panel form-panel"><h2>Exportar CSV por período</h2><form method="get" action="/exportar.csv" class="form-grid"><label class="field">Data inicial<input type="date" name="inicio" value="{{ default_start }}" required></label><label class="field">Data final<input type="date" name="fim" value="{{ default_end }}" required></label><div class="form-actions"><button class="button" type="submit">Exportar CSV</button></div></form><p class="muted helper-text">O CSV inclui despesas pela data da compra e receitas/descontos pela data do lançamento, com valor em centavos e reais, status, conta, cartão e parcela.</p></section>
 <section class="panel backup-panel"><div><h2>Backup completo do banco</h2><p class="muted">Baixa o arquivo .db com cadastros, movimentos, orçamentos e regras recorrentes. Guarde a cópia em local seguro.</p></div><a class="button" href="/backup.db">Baixar backup .db</a></section>
 {% endblock %}
-````
+```
 
 ## `app/templates/savings.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}Poupança · Casa em ordem{% endblock %}
 {% block content %}
@@ -2922,11 +3549,11 @@ document.addEventListener('DOMContentLoaded', function () {
 {% else %}<tr><td colspan="5" class="empty-cell">Ainda não há movimentações registradas.</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% endblock %}
-````
+```
 
 ## `app/templates/transaction_form.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}{{ title }} · Casa em ordem{% endblock %}
 {% block content %}
@@ -2962,11 +3589,11 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endblock %}
-````
+```
 
 ## `app/templates/transactions.html`
 
-````html
+```html
 {% extends "base.html" %}
 {% block title %}Gastos · Casa em ordem{% endblock %}
 {% block content %}
@@ -2978,11 +3605,11 @@ document.addEventListener('DOMContentLoaded', function () {
 </tbody></table></div></section>
 <div class="floating-actions"><a class="button" href="/transacoes/nova">+ Lançar gasto</a><a class="button button-light" href="/transacoes/nova?tipo=previsto">+ Planejar gasto</a></div>
 {% endblock %}
-````
+```
 
 ## `app/templates/users.html`
 
-````html
+```html
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -3023,11 +3650,60 @@ document.addEventListener('DOMContentLoaded', function () {
   <footer class="footer">Dados guardados no banco local · Acesso administrativo</footer>
 </body>
 </html>
-````
+```
+
+## `docker-compose.yml`
+
+```yaml
+services:
+  familia-financas:
+    build: .
+    container_name: familia-financas
+    ports:
+      - "8080:8080"
+    volumes:
+      - familia_financas_data:/data
+    environment:
+      TZ: America/Cuiaba
+      DATABASE_URL: sqlite:////data/financas.db
+      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "${FORWARDED_ALLOW_IPS:-127.0.0.1}"]
+    restart: unless-stopped
+volumes:
+  familia_financas_data:
+```
+
+## `requirements.txt`
+
+```text
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+SQLAlchemy==2.0.40
+Jinja2==3.1.6
+python-multipart==0.0.20
+pydantic==2.11.4
+argon2-cffi==23.1.0
+itsdangerous==2.2.0
+```
+
+## `start.sh`
+
+```bash
+#!/bin/sh
+set -eu
+# O volume já existia nas versões anteriores, então corrigimos proprietário e permissões ao iniciar.
+mkdir -p /data
+chown -R app:app /data
+chmod 700 /data
+find /data -maxdepth 1 -type f -exec chmod 600 {} \;
+umask 077
+exec gosu app "$@"
+```
 
 ## `tests/test_auth_flow.py`
 
-````python
+```python
 """Teste integrado de login, troca obrigatória de senha e controle de CSRF."""
 import os
 import re
@@ -3042,6 +3718,8 @@ os.environ["COOKIE_SECURE"] = "false"
 
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
+from app.database import SessionLocal  # noqa: E402
+from app.models import Person, CreditCard  # noqa: E402
 
 
 def csrf_token(html: str) -> str:
@@ -3087,7 +3765,32 @@ class AuthenticationFlowTests(unittest.TestCase):
         }, follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/?ok=1")
-        self.assertEqual(self.client.get("/").status_code, 200)
+        dashboard = self.client.get("/")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn('id="chart-cashflow"', dashboard.text)
+        self.assertIn('class="sidebar"', dashboard.text)
+        self.assertIn('data-theme="dark"', dashboard.text)
+
+        # O cadastro armazena apenas os quatro últimos dígitos, exibidos no cartão visual.
+        db = SessionLocal()
+        try:
+            husband = db.query(Person).filter(Person.name == "Marido").first()
+            husband_id = husband.id
+        finally:
+            db.close()
+        registration = self.client.get("/cadastros")
+        token = csrf_token(registration.text)
+        response = self.client.post("/cadastros/cartoes", data={
+            "_csrf": token, "name": "Nubank Roxinho", "owner_id": str(husband_id),
+            "kind": "credito", "closing_day": "10", "due_day": "17",
+            "limit": "1500,00", "last_four_digits": "4821", "payment_account_id": "",
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        card_page = self.client.get("/cartoes")
+        self.assertEqual(card_page.status_code, 200)
+        self.assertIn("bank-card-nubank", card_page.text)
+        self.assertIn("4821", card_page.text)
+        self.assertIn("Entradas x saídas", dashboard.text)
 
         # Um POST sem token CSRF é bloqueado mesmo com uma sessão autenticada.
         response = self.client.post("/usuarios", data={
@@ -3133,11 +3836,11 @@ class AuthenticationFlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-````
+```
 
 ## `tests/test_services.py`
 
-````python
+```python
 import unittest
 from datetime import date
 from sqlalchemy import create_engine, select
@@ -3237,4 +3940,4 @@ class FinanceServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-````
+```

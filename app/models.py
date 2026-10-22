@@ -53,6 +53,7 @@ class CreditCard(Base):
     closing_day: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     due_day: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     limit_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_four_digits: Mapped[str] = mapped_column(String(4), default="", nullable=False)
     payment_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     owner: Mapped[Person] = relationship()
