@@ -13,8 +13,9 @@ router = APIRouter(prefix="/cartoes", tags=["cartões"])
 @router.get("")
 def card_invoices(request: Request, mes: str | None = None, cartao: int | None = None, db: Session = Depends(get_db)):
     year, month = parse_month(mes)
-    cards = list(db.scalars(select(CreditCard).where(CreditCard.active.is_(True), CreditCard.kind == "credito").order_by(CreditCard.name)).all())
-    selected_card = next((c for c in cards if c.id == cartao), cards[0] if cards else None)
+    cards = list(db.scalars(select(CreditCard).where(CreditCard.active.is_(True)).order_by(CreditCard.name)).all())
+    credit_cards = [card for card in cards if card.kind == "credito"]
+    selected_card = next((c for c in credit_cards if c.id == cartao), credit_cards[0] if credit_cards else None)
     start, end = month_start(year, month), month_end(year, month)
     items = []
     if selected_card:
@@ -26,8 +27,8 @@ def card_invoices(request: Request, mes: str | None = None, cartao: int | None =
         ).order_by(FinancialTransaction.cashflow_date, FinancialTransaction.id)).all())
     total = sum(t.amount_cents for t in items)
     card_totals = []
-    for card in cards:
+    for card in credit_cards:
         amount = sum(t.amount_cents for t in items if t.card_id == card.id) if selected_card and card.id == selected_card.id else 0
         card_totals.append({"card": card, "amount": amount})
     return page(request, db, "cards.html", active_nav="cartoes", mes=f"{year:04d}-{month:02d}", all_cards=cards,
-                selected_card=selected_card, items=items, total=total, card_totals=card_totals)
+                credit_cards=credit_cards, selected_card=selected_card, items=items, total=total, card_totals=card_totals)

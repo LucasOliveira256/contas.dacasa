@@ -1,10 +1,12 @@
 # Casa em Ordem — Finanças da Família
 
-Aplicação web para controlar receitas, despesas, cartões, orçamento e poupanças familiares. Executa em um container Docker, com SQLite persistente e interface responsiva em português.
+Aplicação web para controlar receitas, despesas, cartões, orçamento e poupanças familiares. Executa em um container Docker, com SQLite persistente e interface responsiva em português. Interface inspirada em dashboards administrativos modernos, com tema Dark e alternativa Material Light.
 
 ## Funcionalidades
 
-- Dashboard mensal, histórico e projeção de 12 meses.
+- Dashboard mensal com gráfico de linhas de entradas x saídas, histórico e projeção de 12 meses.
+- Menu lateral expansível por hover no desktop e recolhível no celular; tema Dark e Material Light.
+- Cartões visuais com cores por emissor e exibição opcional dos quatro últimos dígitos (o número completo não é armazenado).
 - Receitas, despesas fixas/variáveis/planejadas e parcelamento no crédito.
 - Cartões de crédito, débito e Vale Alimentação.
 - Pessoas, categorias, contas, orçamentos e relatórios.

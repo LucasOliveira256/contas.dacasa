@@ -1,37 +1,33 @@
 {% extends "base.html" %}
-{% block title %}Visão geral · Casa em ordem{% endblock %}
+{% block title %}Visão geral · Casa em Ordem{% endblock %}
 {% block content %}
-<section class="page-head">
-  <div><p class="eyebrow">PAINEL FAMILIAR</p><h1>Visão geral</h1><p class="muted">Receitas e compromissos de {{ '%02d'|format(month) }}/{{ year }}</p></div>
-  <form class="month-form" method="get" action="/"><label for="mes">Mês</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button" type="submit">Ver mês</button></form>
+<section class="page-head dashboard-head">
+  <div><p class="eyebrow">PAINEL FINANCEIRO</p><h1>Bom dia, família <span class="headline-spark">✦</span></h1><p class="muted">Aqui está o resumo de {{ '%02d'|format(month) }}/{{ year }}.</p></div>
+  <form class="month-form" method="get" action="/"><label for="mes">Período</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button" type="submit">Atualizar</button></form>
 </section>
-<section class="metric-grid">
-  <article class="metric"><span>Receitas no fluxo</span><strong>{{ income_total|brl }}</strong><small>{{ income_count }} lançamento(s)</small></article>
-  <article class="metric"><span>Despesas previstas no caixa</span><strong>{{ expense_total|brl }}</strong><small>{{ expense_count }} lançamento(s), cartão pelo vencimento</small></article>
-  <article class="metric {% if balance < 0 %}metric-danger{% else %}metric-good{% endif %}"><span>Saldo previsto do mês</span><strong>{{ balance|brl }}</strong><small>Receitas menos compromissos</small></article>
-  <article class="metric"><span>Orçamento já usado</span><strong>{% if budget_total %}{{ (actual_budgeted * 100 // budget_total) }}%{% else %}—{% endif %}</strong><small>{{ actual_budgeted|brl }} de {{ budget_total|brl }}</small></article>
+<section class="metric-grid dashboard-metrics">
+  <article class="metric metric-income"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/><path d="M4 21h16"/></svg></span><span class="metric-label">Entradas no mês</span></div><strong>{{ income_total|brl }}</strong><small><span class="metric-dot"></span>{{ income_count }} lançamento(s) no fluxo de caixa</small><div class="metric-comparison {% if income_total >= prev_income %}up{% else %}down{% endif %}">{% if income_total >= prev_income %}↑{% else %}↓{% endif %} {{ ((income_total-prev_income)*100//prev_income if prev_income else (100 if income_total else 0))|abs }}% <span>vs. mês anterior</span></div></article>
+  <article class="metric metric-expense"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><path d="M12 5v14m6-6-6 6-6-6"/><path d="M4 3h16"/></svg></span><span class="metric-label">Saídas no mês</span></div><strong>{{ expense_total|brl }}</strong><small><span class="metric-dot"></span>{{ expense_count }} compromisso(s), cartão pelo vencimento</small><div class="metric-comparison {% if expense_total <= prev_expense %}up{% else %}down{% endif %}">{% if expense_total <= prev_expense %}↓{% else %}↑{% endif %} {{ ((expense_total-prev_expense)*100//prev_expense if prev_expense else (100 if expense_total else 0))|abs }}% <span>vs. mês anterior</span></div></article>
+  <article class="metric {% if balance < 0 %}metric-danger{% else %}metric-balance{% endif %}"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18m-13 5h4"/></svg></span><span class="metric-label">Saldo previsto</span></div><strong>{{ balance|brl }}</strong><small><span class="metric-dot"></span>Entradas menos compromissos do mês</small><div class="metric-comparison {% if balance >= prev_balance %}up{% else %}down{% endif %}">{% if balance >= prev_balance %}↑{% else %}↓{% endif %} {{ ((balance-prev_balance)*100//(prev_balance if prev_balance else 1))|abs }}% <span>vs. saldo anterior</span></div></article>
 </section>
-<section class="section-heading"><div><h2>Comparação com o mês anterior</h2><p class="muted">Fluxo de caixa estimado no mesmo critério</p></div></section>
-<div class="compare-grid">
-  <div class="compare-card"><span>Receitas anteriores</span><b>{{ prev_income|brl }}</b><small>Saldo atual de receitas: {{ (income_total - prev_income)|brl }} de diferença</small></div>
-  <div class="compare-card"><span>Despesas anteriores</span><b>{{ prev_expense|brl }}</b><small>Saldo anterior: {{ prev_balance|brl }}</small></div>
-</div>
-<section class="section-heading"><div><h2>Visão por gráficos</h2><p class="muted">Gráficos locais; funcionam sem internet.</p></div></section>
-<section class="chart-grid">
-  <article class="panel chart-panel"><h3>Despesas por categoria</h3><p class="muted">Compras realizadas na data selecionada</p><div class="chart-wrap"><canvas id="chart-pie" aria-label="Despesas por categoria"></canvas></div><p class="empty-hint" id="pie-empty" hidden>Sem despesas realizadas neste mês.</p></article>
-  <article class="panel chart-panel"><h3>Receitas x despesas</h3><p class="muted">Últimos 12 meses pelo fluxo de caixa</p><div class="chart-wrap"><canvas id="chart-bars" aria-label="Receitas comparadas com despesas"></canvas></div></article>
-  <article class="panel chart-panel"><h3>Evolução do saldo</h3><p class="muted">Saldo acumulado relativo dos 12 meses</p><div class="chart-wrap"><canvas id="chart-line" aria-label="Evolução do saldo acumulado"></canvas></div></article>
-  <article class="panel chart-panel"><h3>Faturas por cartão</h3><p class="muted">Compromissos por mês de vencimento · 6 meses</p><div class="chart-wrap"><canvas id="chart-cards" aria-label="Despesas por cartão"></canvas></div></article>
+<section class="panel cashflow-panel">
+  <div class="panel-heading cashflow-heading"><div><p class="eyebrow">FLUXO DE CAIXA</p><h2>Entradas x saídas</h2><p class="muted">Comparativo mensal dos últimos 12 meses · valores em reais</p></div><span class="chart-period"><span class="chart-status-dot"></span>12 meses</span></div>
+  <div class="cashflow-legend"><span><i class="legend-income"></i> Entradas</span><span><i class="legend-expense"></i> Saídas</span></div>
+  <div class="chart-wrap cashflow-chart-wrap"><canvas id="chart-cashflow" aria-label="Gráfico de linhas comparando entradas e saídas do fluxo de caixa nos últimos doze meses"></canvas></div>
+  <div class="cashflow-footer"><span><small>Diferença no mês selecionado</small><strong class="{% if balance < 0 %}negative-value{% else %}positive-value{% endif %}">{{ balance|brl }}</strong></span><span><small>Despesas vs. mês anterior</small><strong>{% if expense_total > prev_expense %}+{% elif expense_total < prev_expense %}−{% endif %}{{ ((expense_total-prev_expense)|abs)|brl }}</strong></span></div>
+</section>
+<section class="dashboard-lower-grid section-gap">
+  <article class="panel chart-panel"><div class="panel-heading"><div><h2>Gastos por categoria</h2><p class="muted">Compras realizadas em {{ '%02d'|format(month) }}/{{ year }}</p></div><a class="text-link" href="/historico?mes={{ mes }}">Detalhes ↗</a></div><div class="chart-wrap"><canvas id="chart-pie" aria-label="Gastos por categoria"></canvas></div><p class="empty-hint" id="pie-empty" hidden>Sem despesas realizadas neste mês.</p></article>
+  <article class="panel chart-panel"><div class="panel-heading"><div><h2>Evolução do saldo</h2><p class="muted">Saldo acumulado relativo nos 12 meses</p></div><a class="text-link" href="/projecao">Projeção ↗</a></div><div class="chart-wrap"><canvas id="chart-line" aria-label="Evolução do saldo acumulado"></canvas></div></article>
+  <article class="panel chart-panel card-chart-panel"><div class="panel-heading"><div><h2>Uso por cartão</h2><p class="muted">Saídas agrupadas por cartão · últimos 6 meses</p></div><a class="text-link" href="/cartoes">Cartões ↗</a></div><div class="chart-wrap"><canvas id="chart-cards" aria-label="Despesas por cartão"></canvas></div></article>
 </section>
 <section class="content-grid section-gap">
-  <article class="panel"><div class="panel-heading"><div><h2>Próximos vencimentos</h2><p class="muted">Até 45 dias · sem duplicar fatura</p></div><a class="text-link" href="/planejados">Ver planejados</a></div>
-    <div id="upcoming-list" hx-get="/partials/proximos" hx-trigger="load" hx-swap="innerHTML"><p class="muted">Carregando vencimentos…</p></div>
-  </article>
-  <article class="panel"><div class="panel-heading"><div><h2>Orçamento por categoria</h2><p class="muted">Considera gastos realizados na data da compra</p></div><a class="text-link" href="/orcamento?mes={{ mes }}">Gerenciar</a></div>
+  <article class="panel"><div class="panel-heading"><div><h2>Próximos vencimentos</h2><p class="muted">Até 45 dias · faturas sem dupla contagem</p></div><a class="text-link" href="/planejados">Ver planejados ↗</a></div><div id="upcoming-list" hx-get="/partials/proximos" hx-trigger="load" hx-swap="innerHTML"><p class="muted">Carregando vencimentos…</p></div></article>
+  <article class="panel"><div class="panel-heading"><div><h2>Orçamento por categoria</h2><p class="muted">Despesas realizadas pela data da compra</p></div><a class="text-link" href="/orcamento?mes={{ mes }}">Gerenciar ↗</a></div>
     {% if budget_rows %}<div class="budget-list">{% for item in budget_rows %}<div class="budget-row"><div class="row-between"><span>{{ item.name }}</span><strong>{{ item.spent|brl }} / {{ item.amount|brl }}</strong></div><div class="progress"><span class="{% if item.over %}over{% endif %}" style="width:{{ item.percent if item.percent < 100 else 100 }}%"></span></div><small class="{% if item.over %}danger-text{% else %}muted{% endif %}">{% if item.over %}Orçamento excedido em {{ (item.spent-item.amount)|brl }}{% else %}{{ item.percent }}% utilizado{% endif %}</small></div>{% endfor %}</div>{% else %}<div class="empty-state">Nenhum orçamento cadastrado para este mês. <a href="/orcamento?mes={{ mes }}">Criar orçamento</a></div>{% endif %}
   </article>
 </section>
-<section class="panel"><div class="panel-heading"><div><h2>Categorias com maior gasto</h2><p class="muted">Variação comparada ao mês anterior</p></div><a class="text-link" href="/historico?mes={{ mes }}">Resumo do mês</a></div>
+<section class="panel section-gap"><div class="panel-heading"><div><h2>Categorias com maior gasto</h2><p class="muted">Variação comparada ao mês anterior</p></div><a class="text-link" href="/historico?mes={{ mes }}">Resumo do mês ↗</a></div>
   {% if ranking %}<div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Este mês</th><th>Mês anterior</th><th>Variação</th></tr></thead><tbody>{% for item in ranking %}<tr><td>{{ item.name }}</td><td>{{ item.amount|brl }}</td><td>{{ item.previous|brl }}</td><td><span class="change {% if item.delta > 0 %}danger-text{% elif item.delta < 0 %}good-text{% endif %}">{% if item.delta > 0 %}+{% endif %}{{ item.delta }}%</span></td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty-state">Registre despesas realizadas para montar o ranking.</p>{% endif %}
 </section>
 <script id="chart-data" type="application/json">{{ chart_payload|tojson }}</script>
