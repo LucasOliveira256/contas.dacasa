@@ -13,7 +13,7 @@ os.environ["COOKIE_SECURE"] = "false"
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
-from app.models import Person, CreditCard  # noqa: E402
+from app.models import Person, CreditCard, User  # noqa: E402
 
 
 def csrf_token(html: str) -> str:
@@ -64,6 +64,7 @@ class AuthenticationFlowTests(unittest.TestCase):
         self.assertIn('id="chart-cashflow"', dashboard.text)
         self.assertIn('class="sidebar"', dashboard.text)
         self.assertIn('data-theme="dark"', dashboard.text)
+        self.assertRegex(dashboard.text, r'(Bom dia|Boa tarde|Boa noite), família')
 
         # O cadastro armazena apenas os quatro últimos dígitos, exibidos no cartão visual.
         db = SessionLocal()
@@ -103,21 +104,45 @@ class AuthenticationFlowTests(unittest.TestCase):
             "_csrf": token,
         }, follow_redirects=False)
         self.assertEqual(response.status_code, 303)
-        self.assertIn("/usuarios?ok=1", response.headers["location"])
+        self.assertIn("/usuarios?ok=criado", response.headers["location"])
+
+        # Admin pode redefinir a senha de outro usuário e força a troca no próximo login.
+        db = SessionLocal()
+        try:
+            wife_user_id = db.scalar(__import__("sqlalchemy").select(User.id).where(User.username_key == "esposa"))
+        finally:
+            db.close()
+        users_page = self.client.get("/usuarios")
+        self.assertIn(f'action="/usuarios/{wife_user_id}/senha"', users_page.text)
+        token = csrf_token(users_page.text)
+        response = self.client.post(f"/usuarios/{wife_user_id}/senha", data={
+            "new_password": "SenhaProvisoriaNova2026!",
+            "confirm_password": "SenhaProvisoriaNova2026!",
+            "_csrf": token,
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("/usuarios?ok=senha", response.headers["location"])
+        db = SessionLocal()
+        try:
+            wife_user = db.get(User, wife_user_id)
+            self.assertTrue(wife_user.must_change_password)
+            self.assertGreaterEqual(wife_user.session_version, 1)
+        finally:
+            db.close()
 
         response = self.client.post("/logout", data={"_csrf": token}, follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         response = self.client.get("/login")
         token = csrf_token(response.text)
         response = self.client.post("/login", data={
-            "username": "esposa", "password": "PrimeiraSenha2026!", "next_url": "/", "_csrf": token,
+            "username": "esposa", "password": "SenhaProvisoriaNova2026!", "next_url": "/", "_csrf": token,
         }, follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         self.assertIn("/alterar-senha", response.headers["location"])
         response = self.client.get("/alterar-senha")
         token = csrf_token(response.text)
         response = self.client.post("/alterar-senha", data={
-            "current_password": "PrimeiraSenha2026!",
+            "current_password": "SenhaProvisoriaNova2026!",
             "new_password": "OutraSenhaSegura2026!",
             "confirm_password": "OutraSenhaSegura2026!",
             "_csrf": token,

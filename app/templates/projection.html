@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Projeção · Casa em ordem{% endblock %}
+{% block title %}Projeção · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">PLANEJAMENTO</p><h1>Projeção de 12 meses</h1><p class="muted">Inclui gastos previstos/realizados conforme o vencimento de caixa. Receitas futuras precisam ser cadastradas com a respectiva data.</p></div><a class="button" href="/transacoes/nova?tipo=previsto">+ Planejar gasto</a></section>
 <div class="panel"><div class="table-wrap"><table><thead><tr><th>Mês</th><th>Receitas cadastradas</th><th>Despesas/compromissos</th><th>Saldo previsto</th></tr></thead><tbody>{% for row in months %}<tr><td><b>{{ row.name }}</b></td><td>{{ row.income|brl }}</td><td>{{ row.expenses|brl }}</td><td class="money {% if row.balance < 0 %}danger-text{% else %}good-text{% endif %}">{{ row.balance|brl }}</td></tr>{% endfor %}</tbody></table></div></div>

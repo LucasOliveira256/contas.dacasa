@@ -1,40 +1,49 @@
-<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#12352d">
-  <title>Usuários · Casa em Ordem</title>
-  <link rel="stylesheet" href="/static/css/app.css">
-  <script defer src="/static/js/app.js"></script>
-</head>
-<body>
-  <header class="topbar">
-    <a class="brand" href="/" aria-label="Página inicial"><span class="brand-mark">R$</span><span>Casa em ordem<small>Finanças da família</small></span></a>
-    <div class="top-actions"><a class="top-action" href="/alterar-senha">Alterar senha</a><form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="top-action" type="submit">Sair</button></form></div>
-  </header>
-  <nav class="nav-grid" aria-label="Navegação principal"><a class="nav-item" href="/">Visão geral</a><a class="nav-item" href="/cadastros">Cadastros</a><a class="nav-item active" href="/usuarios">Usuários</a></nav>
-  <main class="container">
-    {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
-    {% if ok %}<div class="notice success">Usuário criado. Ele deverá trocar a senha no primeiro acesso.</div>{% endif %}
-    <div class="page-head"><div><p class="eyebrow">ADMINISTRAÇÃO</p><h1>Usuários</h1><p class="muted">Somente o Admin pode criar contas. Novos usuários precisam trocar a senha no primeiro acesso.</p></div></div>
-    <section class="panel auth-user-form">
-      <h2>Criar usuário</h2>
-      <form method="post" action="/usuarios" class="form-grid">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <label class="field">Nome de usuário<input name="username" required minlength="3" maxlength="32" autocomplete="off" pattern="[A-Za-z0-9_.-]{3,32}"><small class="subline">3–32 caracteres: letras, números, ponto, hífen ou sublinhado.</small></label>
-        <label class="field">Senha provisória<input name="password" type="password" required minlength="12" autocomplete="new-password"></label>
-        <label class="field">Confirme a senha<input name="confirm_password" type="password" required minlength="12" autocomplete="new-password"></label>
-        <div class="form-actions"><button class="button" type="submit">Criar usuário</button></div>
-      </form>
-    </section>
-    <section class="panel section-gap">
-      <h2>Contas cadastradas</h2>
-      <div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Estado</th><th>Criado em</th></tr></thead><tbody>
-      {% for user in users %}<tr><td>{{ user.username }}{% if user.id == current_user.id %}<small class="subline">Sua conta</small>{% endif %}</td><td>{% if user.is_admin %}Administrador{% else %}Usuário{% endif %}</td><td>{% if not user.is_active %}Inativo{% elif user.must_change_password %}Troca de senha pendente{% else %}Ativo{% endif %}</td><td>{{ user.created_at.strftime('%d/%m/%Y') }}</td></tr>{% endfor %}
-      </tbody></table></div>
-    </section>
-  </main>
-  <footer class="footer">Dados guardados no banco local · Acesso administrativo</footer>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Usuários · Contas da Casa{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">ADMINISTRAÇÃO</p>
+    <h1>Usuários</h1>
+    <p class="muted">Crie contas e redefina senhas provisórias. A próxima entrada exige que o usuário escolha uma nova senha.</p>
+  </div>
+</section>
+<section class="panel auth-user-form">
+  <div class="panel-heading"><div><h2>Criar usuário</h2><p class="muted">A senha inicial deve ter pelo menos 12 caracteres.</p></div></div>
+  <form method="post" action="/usuarios" class="form-grid">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="field">Nome de usuário<input name="username" required minlength="3" maxlength="32" autocomplete="off" pattern="[A-Za-z0-9_.-]{3,32}"><small class="subline">3–32 caracteres: letras, números, ponto, hífen ou sublinhado.</small></label>
+    <label class="field">Senha provisória<input name="password" type="password" required minlength="12" autocomplete="new-password"></label>
+    <label class="field">Confirme a senha<input name="confirm_password" type="password" required minlength="12" autocomplete="new-password"></label>
+    <div class="form-actions"><button class="button" type="submit">Criar usuário</button></div>
+  </form>
+</section>
+<section class="panel section-gap">
+  <div class="panel-heading"><div><h2>Contas cadastradas</h2><p class="muted">Redefinir a senha encerra as sessões anteriores dessa conta.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Estado</th><th>Criado em</th><th>Segurança</th></tr></thead><tbody>
+  {% for user in users %}
+    <tr>
+      <td>{{ user.username }}{% if user.id == current_user.id %}<small class="subline">Sua conta</small>{% endif %}</td>
+      <td>{% if user.is_admin %}Administrador{% else %}Usuário{% endif %}</td>
+      <td>{% if not user.is_active %}Inativo{% elif user.must_change_password %}Troca de senha pendente{% else %}Ativo{% endif %}</td>
+      <td>{{ user.created_at.strftime('%d/%m/%Y') }}</td>
+      <td>
+        {% if user.id == current_user.id %}
+          <a class="button button-light button-small" href="/alterar-senha">Alterar sua senha</a>
+        {% else %}
+          <details class="user-reset-details">
+            <summary class="button button-light button-small">Redefinir senha</summary>
+            <form method="post" action="/usuarios/{{ user.id }}/senha" class="user-reset-form">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <label class="field">Nova senha provisória<input type="password" name="new_password" required minlength="12" autocomplete="new-password"></label>
+              <label class="field">Confirmar senha<input type="password" name="confirm_password" required minlength="12" autocomplete="new-password"></label>
+              <button class="button button-small" type="submit">Salvar nova senha</button>
+            </form>
+          </details>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

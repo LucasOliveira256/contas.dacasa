@@ -8,12 +8,15 @@ from ..models import Income, FinancialTransaction, Budget, Category, CreditCard
 from ..services.finance import active_transactions_for_month, incomes_for_month, month_start, month_end, add_months, parse_month, month_key, category_name
 from ..services.recurring import ensure_fixed_transactions
 from .common import page
+from ..services.local_time import local_now, local_today, greeting_for_hour
 
 router = APIRouter()
 
 @router.get("/")
 def dashboard(request: Request, mes: str | None = None, db: Session = Depends(get_db)):
-    today = date.today()
+    now = local_now()
+    today = now.date()
+    greeting = greeting_for_hour(now.hour)
     year, month = parse_month(mes, today)
     selected = month_start(year, month)
     ensure_fixed_transactions(db, today)
@@ -105,14 +108,15 @@ def dashboard(request: Request, mes: str | None = None, db: Session = Depends(ge
                 prev_income=prev_income, prev_expense=prev_expense, prev_balance=prev_income-prev_expense,
                 income_count=len(cash_incomes), expense_count=len(transactions), budget_total=budget_total,
                 actual_budgeted=actual_budgeted, budget_rows=budget_rows, ranking=ranking, upcoming=upcoming,
-                chart_payload=chart_payload, previous_month=month_key(previous_date), actual_spend=sum(t.amount_cents for t in actual_purchase))
+                chart_payload=chart_payload, previous_month=month_key(previous_date), actual_spend=sum(t.amount_cents for t in actual_purchase),
+                greeting=greeting)
 
 @router.get("/partials/proximos")
 def upcoming_partial(request: Request, db: Session = Depends(get_db)):
     from datetime import timedelta
     from .common import templates
     from .common import base_context
-    today = date.today()
+    today = local_today()
     rows = list(db.scalars(select(FinancialTransaction).where(
         FinancialTransaction.cashflow_date >= today,
         FinancialTransaction.cashflow_date <= today + timedelta(days=45),

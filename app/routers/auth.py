@@ -142,13 +142,8 @@ def change_password(
 @router.get("/usuarios")
 def users_page(request: Request, db: Session = Depends(get_db)):
     users = list(db.scalars(select(User).order_by(User.is_admin.desc(), User.username_key)).all())
-    return templates.TemplateResponse(request=request, name="users.html", context={
-        "csrf_token": request.session.get("csrf_token", ""),
-        "current_user": request.state.current_user,
-        "users": users,
-        "erro": request.query_params.get("erro"),
-        "ok": request.query_params.get("ok"),
-    })
+    from .common import page
+    return page(request, db, "users.html", active_nav="usuarios", users=users)
 
 
 @router.post("/usuarios")
@@ -171,4 +166,33 @@ def create_user(
     db.add(User(username=clean_username, username_key=key, password_hash=hash_password(password),
                 is_admin=False, is_active=True, must_change_password=True))
     db.commit()
-    return RedirectResponse("/usuarios?ok=1", status_code=303)
+    return RedirectResponse("/usuarios?ok=criado", status_code=303)
+
+
+@router.post("/usuarios/{user_id}/senha")
+def reset_user_password(
+    user_id: int,
+    request: Request,
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Admin define uma senha provisória; o usuário precisa trocá-la no próximo login."""
+    current = request.state.current_user
+    if not current or not current["is_admin"]:
+        return RedirectResponse("/?erro=Acesso+restrito+ao+Admin", status_code=303)
+    if user_id == current["id"]:
+        return _redirect_error("/usuarios", "Para alterar sua própria senha, use a opção Alterar senha.")
+    user = db.get(User, user_id)
+    if not user:
+        return _redirect_error("/usuarios", "Usuário não encontrado.")
+    if len(new_password) < 12:
+        return _redirect_error("/usuarios", "A senha provisória deve ter pelo menos 12 caracteres.")
+    if new_password != confirm_password:
+        return _redirect_error("/usuarios", "A confirmação da senha não corresponde.")
+    user.password_hash = hash_password(new_password)
+    user.must_change_password = True
+    # Invalida sessões anteriores do usuário e força troca no próximo acesso.
+    user.session_version += 1
+    db.commit()
+    return RedirectResponse("/usuarios?ok=senha", status_code=303)
