@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Visão geral · Casa em Ordem{% endblock %}
+{% block title %}Visão geral · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head dashboard-head">
-  <div><p class="eyebrow">PAINEL FINANCEIRO</p><h1>Bom dia, família <span class="headline-spark">✦</span></h1><p class="muted">Aqui está o resumo de {{ '%02d'|format(month) }}/{{ year }}.</p></div>
+  <div><p class="eyebrow">PAINEL FINANCEIRO</p><h1>{{ greeting }}, família <span class="headline-spark">✦</span></h1><p class="muted">Aqui está o resumo de {{ '%02d'|format(month) }}/{{ year }}.</p></div>
   <form class="month-form" method="get" action="/"><label for="mes">Período</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button" type="submit">Atualizar</button></form>
 </section>
 <section class="metric-grid dashboard-metrics">

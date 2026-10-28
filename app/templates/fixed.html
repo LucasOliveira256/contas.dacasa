@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Gastos fixos · Casa em ordem{% endblock %}
+{% block title %}Gastos fixos · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">RECORRÊNCIA MENSAL</p><h1>Gastos fixos</h1><p class="muted">Ocorrências são criadas automaticamente até 12 meses à frente. Ajuste um mês específico em Gastos, sem alterar os demais.</p></div></section>
 <form class="panel form-panel" method="post" action="/transacoes/fixos"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><h2>Novo gasto recorrente</h2><div class="form-grid">

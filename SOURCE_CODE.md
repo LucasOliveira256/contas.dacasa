@@ -1,5 +1,7 @@
-# Casa em Ordem — Código-fonte completo
-Este documento contém os arquivos do projeto integralmente, sem omitir trechos. O projeto executável também está disponível no ZIP.
+# Contas da Casa — Código-fonte completo
+
+Este documento foi gerado a partir dos arquivos incluídos neste pacote. O projeto executável acompanha o ZIP.
+
 
 ## `.dockerignore`
 
@@ -14,7 +16,9 @@ tests/
 
 .env
 .session_secret.key
+
 ```
+
 
 ## `.env.example`
 
@@ -25,7 +29,9 @@ COOKIE_SECURE=true
 # Se o proxy reverso estiver em outro IP, indique o IP exato dele.
 # Exemplo: FORWARDED_ALLOW_IPS=10.0.0.20
 FORWARDED_ALLOW_IPS=127.0.0.1
+
 ```
+
 
 ## `.gitignore`
 
@@ -40,11 +46,13 @@ __pycache__/
 .env
 .session_secret.key
 .pytest_cache/
+
 ```
+
 
 ## `Dockerfile`
 
-```dockerfile
+```text
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 TZ=America/Cuiaba DATABASE_URL=sqlite:////data/financas.db
 WORKDIR /app
@@ -59,14 +67,16 @@ RUN chmod 755 /usr/local/bin/start.sh && mkdir -p /data && chown app:app /data
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/start.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
+
 ```
+
 
 ## `README.md`
 
 ```markdown
-# Casa em Ordem — Finanças da Família
+# Contas da Casa — Gestão Financeira Familiar
 
-Aplicação web para controlar receitas, despesas, cartões, orçamento e poupanças familiares. Executa em um container Docker, com SQLite persistente e interface responsiva em português. Interface inspirada em dashboards administrativos modernos, com tema Dark e alternativa Material Light.
+Aplicação web para controlar receitas, despesas, cartões, orçamento e poupanças familiares. Executa em um container Docker, com SQLite persistente e interface responsiva em português. Interface inspirada no sistema visual Stripi: navy profundo, índigo elétrico, gradientes atmosféricos, tipografia leve e números tabulares. Tema Dark padrão e alternativa Material Light.
 
 ## Funcionalidades
 
@@ -80,13 +90,17 @@ Aplicação web para controlar receitas, despesas, cartões, orçamento e poupan
 - Gráficos offline, exportação CSV e backup do banco.
 - Login, gestão de usuários, troca obrigatória de senhas iniciais e proteção CSRF.
 
+## Identidade visual
+
+O frontend utiliza uma interpretação do `DESIGN-stripe.md`: paleta índigo/navy, malha de gradientes sem imagens externas, botões pill, cartões de 12px, campos compactos e números financeiros com algarismos tabulares. O shell da dashboard permanece escuro por padrão; Material Light pode ser selecionado no cabeçalho e a preferência fica salva no navegador. A fonte usa Inter/SF Pro Display ou fontes de sistema como fallback, sem requisições externas.
+
 ## Executar
 
 Requer Docker Engine e Docker Compose.
 
 ```bash
 git clone <URL-DO-REPOSITORIO>
-cd familia-financas
+cd contas.dacasa
 cp .env.example .env
 # Mantenha COOKIE_SECURE=true em produção e configure FORWARDED_ALLOW_IPS para o IP confiável do proxy.
 docker compose up -d --build
@@ -106,8 +120,8 @@ docker compose logs -f familia-financas
 - Usuário inicial: `Admin`
 - Senha provisória: `admin`
 - O primeiro login exige uma nova senha com pelo menos 12 caracteres. Faça essa troca antes de liberar o acesso público.
-- O Admin pode criar usuários na página **Usuários**. Cada novo usuário precisa trocar sua senha inicial no primeiro login.
-- Todos os usuários podem alterar a própria senha.
+- O Admin pode criar usuários e redefinir senhas na página **Usuários**. Senhas redefinidas são provisórias e exigem troca no próximo login.
+- Todos os usuários podem alterar a própria senha. O Admin utiliza a ação **Redefinir senha** na conta desejada.
 
 ## Segurança e persistência
 
@@ -129,13 +143,48 @@ docker compose up -d
 ## Licença
 
 Defina a licença desejada antes de publicar o repositório (por exemplo, MIT).
+
 ```
+
+
+## `requirements.txt`
+
+```text
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+SQLAlchemy==2.0.40
+Jinja2==3.1.6
+python-multipart==0.0.20
+pydantic==2.11.4
+argon2-cffi==23.1.0
+itsdangerous==2.2.0
+
+```
+
+
+## `start.sh`
+
+```text
+#!/bin/sh
+set -eu
+# O volume já existia nas versões anteriores, então corrigimos proprietário e permissões ao iniciar.
+mkdir -p /data
+chown -R app:app /data
+chmod 700 /data
+find /data -maxdepth 1 -type f -exec chmod 600 {} \;
+umask 077
+exec gosu app "$@"
+
+```
+
 
 ## `app/__init__.py`
 
 ```python
 """Gestão financeira familiar."""
+
 ```
+
 
 ## `app/auth_middleware.py`
 
@@ -282,7 +331,9 @@ class AuthSecurityMiddleware:
                 message["headers"] = headers
             await send(message)
         await response(scope, receive, secure_send)
+
 ```
+
 
 ## `app/database.py`
 
@@ -344,7 +395,9 @@ def migrate_database() -> None:
                 connection.execute(text("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"))
     # create_all adiciona tabelas novas sem alterar os dados financeiros antigos.
     Base.metadata.create_all(bind=engine)
+
 ```
+
 
 ## `app/main.py`
 
@@ -375,7 +428,7 @@ async def lifespan(app: FastAPI):
         db.close()
     yield
 
-app = FastAPI(title="Casa em Ordem", description="Gestão financeira familiar", version="1.2.0", lifespan=lifespan)
+app = FastAPI(title="Contas da Casa", description="Gestão financeira familiar", version="1.3.0", lifespan=lifespan)
 # SessionMiddleware fica por fora do middleware de autenticação para validar cookies assinados.
 app.add_middleware(AuthSecurityMiddleware)
 app.add_middleware(
@@ -400,7 +453,9 @@ app.include_router(auth.router)
 @app.get("/healthz", include_in_schema=False)
 def healthz():
     return JSONResponse({"status": "ok"})
+
 ```
+
 
 ## `app/models.py`
 
@@ -564,13 +619,17 @@ class SavingsMovement(Base):
         CheckConstraint("amount_cents > 0", name="ck_savings_movement_positive"),
         CheckConstraint("kind IN ('deposito', 'retirada', 'juros')", name="ck_savings_movement_kind"),
     )
+
 ```
+
 
 ## `app/routers/__init__.py`
 
 ```python
 """Rotas HTTP da aplicação."""
+
 ```
+
 
 ## `app/routers/auth.py`
 
@@ -719,13 +778,8 @@ def change_password(
 @router.get("/usuarios")
 def users_page(request: Request, db: Session = Depends(get_db)):
     users = list(db.scalars(select(User).order_by(User.is_admin.desc(), User.username_key)).all())
-    return templates.TemplateResponse(request=request, name="users.html", context={
-        "csrf_token": request.session.get("csrf_token", ""),
-        "current_user": request.state.current_user,
-        "users": users,
-        "erro": request.query_params.get("erro"),
-        "ok": request.query_params.get("ok"),
-    })
+    from .common import page
+    return page(request, db, "users.html", active_nav="usuarios", users=users)
 
 
 @router.post("/usuarios")
@@ -748,8 +802,39 @@ def create_user(
     db.add(User(username=clean_username, username_key=key, password_hash=hash_password(password),
                 is_admin=False, is_active=True, must_change_password=True))
     db.commit()
-    return RedirectResponse("/usuarios?ok=1", status_code=303)
+    return RedirectResponse("/usuarios?ok=criado", status_code=303)
+
+
+@router.post("/usuarios/{user_id}/senha")
+def reset_user_password(
+    user_id: int,
+    request: Request,
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Admin define uma senha provisória; o usuário precisa trocá-la no próximo login."""
+    current = request.state.current_user
+    if not current or not current["is_admin"]:
+        return RedirectResponse("/?erro=Acesso+restrito+ao+Admin", status_code=303)
+    if user_id == current["id"]:
+        return _redirect_error("/usuarios", "Para alterar sua própria senha, use a opção Alterar senha.")
+    user = db.get(User, user_id)
+    if not user:
+        return _redirect_error("/usuarios", "Usuário não encontrado.")
+    if len(new_password) < 12:
+        return _redirect_error("/usuarios", "A senha provisória deve ter pelo menos 12 caracteres.")
+    if new_password != confirm_password:
+        return _redirect_error("/usuarios", "A confirmação da senha não corresponde.")
+    user.password_hash = hash_password(new_password)
+    user.must_change_password = True
+    # Invalida sessões anteriores do usuário e força troca no próximo acesso.
+    user.session_version += 1
+    db.commit()
+    return RedirectResponse("/usuarios?ok=senha", status_code=303)
+
 ```
+
 
 ## `app/routers/budgets.py`
 
@@ -825,7 +910,9 @@ def projection(request: Request, db: Session = Depends(get_db)):
         months.append({"key": month_key(current), "name": current.strftime("%m/%Y"), "income": income,
                        "expenses": expenses, "balance": income-expenses})
     return page(request, db, "projection.html", active_nav="projecao", months=months)
+
 ```
+
 
 ## `app/routers/cards.py`
 
@@ -864,7 +951,9 @@ def card_invoices(request: Request, mes: str | None = None, cartao: int | None =
         card_totals.append({"card": card, "amount": amount})
     return page(request, db, "cards.html", active_nav="cartoes", mes=f"{year:04d}-{month:02d}", all_cards=cards,
                 credit_cards=credit_cards, selected_card=selected_card, items=items, total=total, card_totals=card_totals)
+
 ```
+
 
 ## `app/routers/common.py`
 
@@ -875,6 +964,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..models import Person, Category, Account, CreditCard
 from ..services.finance import brl, date_br, category_name
+from ..services.local_time import local_today
 from fastapi.templating import Jinja2Templates
 
 templates = Jinja2Templates(directory="app/templates")
@@ -887,14 +977,16 @@ def base_context(request: Request, db: Session, **extra):
     accounts = list(db.scalars(select(Account).where(Account.active.is_(True)).order_by(Account.name)).all())
     cards = list(db.scalars(select(CreditCard).where(CreditCard.active.is_(True)).order_by(CreditCard.name)).all())
     category_options = [{"id": c.id, "label": category_name(db, c.id), "name": c.name} for c in categories]
-    context = {"request": request, "today": date.today(), "current_user": getattr(request.state, "current_user", None), "csrf_token": request.session.get("csrf_token", ""), "erro": request.query_params.get("erro"), "ok": request.query_params.get("ok"), "people": people,
+    context = {"request": request, "today": local_today(), "current_user": getattr(request.state, "current_user", None), "csrf_token": request.session.get("csrf_token", ""), "erro": request.query_params.get("erro"), "ok": request.query_params.get("ok"), "people": people,
                "categories": categories, "category_options": category_options,
                "accounts": accounts, "cards": cards, "active_nav": "", **extra}
     return context
 
 def page(request: Request, db: Session, template: str, **extra):
     return templates.TemplateResponse(request=request, name=template, context=base_context(request, db, **extra))
+
 ```
+
 
 ## `app/routers/dashboard.py`
 
@@ -909,12 +1001,15 @@ from ..models import Income, FinancialTransaction, Budget, Category, CreditCard
 from ..services.finance import active_transactions_for_month, incomes_for_month, month_start, month_end, add_months, parse_month, month_key, category_name
 from ..services.recurring import ensure_fixed_transactions
 from .common import page
+from ..services.local_time import local_now, local_today, greeting_for_hour
 
 router = APIRouter()
 
 @router.get("/")
 def dashboard(request: Request, mes: str | None = None, db: Session = Depends(get_db)):
-    today = date.today()
+    now = local_now()
+    today = now.date()
+    greeting = greeting_for_hour(now.hour)
     year, month = parse_month(mes, today)
     selected = month_start(year, month)
     ensure_fixed_transactions(db, today)
@@ -1006,21 +1101,24 @@ def dashboard(request: Request, mes: str | None = None, db: Session = Depends(ge
                 prev_income=prev_income, prev_expense=prev_expense, prev_balance=prev_income-prev_expense,
                 income_count=len(cash_incomes), expense_count=len(transactions), budget_total=budget_total,
                 actual_budgeted=actual_budgeted, budget_rows=budget_rows, ranking=ranking, upcoming=upcoming,
-                chart_payload=chart_payload, previous_month=month_key(previous_date), actual_spend=sum(t.amount_cents for t in actual_purchase))
+                chart_payload=chart_payload, previous_month=month_key(previous_date), actual_spend=sum(t.amount_cents for t in actual_purchase),
+                greeting=greeting)
 
 @router.get("/partials/proximos")
 def upcoming_partial(request: Request, db: Session = Depends(get_db)):
     from datetime import timedelta
     from .common import templates
     from .common import base_context
-    today = date.today()
+    today = local_today()
     rows = list(db.scalars(select(FinancialTransaction).where(
         FinancialTransaction.cashflow_date >= today,
         FinancialTransaction.cashflow_date <= today + timedelta(days=45),
         FinancialTransaction.status != "cancelado").order_by(FinancialTransaction.cashflow_date).limit(10)).all())
     return templates.TemplateResponse(request=request, name="partials/upcoming_rows.html",
                                       context=base_context(request, db, rows=rows))
+
 ```
+
 
 ## `app/routers/incomes.py`
 
@@ -1072,7 +1170,9 @@ def delete_income(income_id: int, db: Session = Depends(get_db)):
         db.delete(income)
         db.commit()
     return RedirectResponse("/receitas", status_code=303)
+
 ```
+
 
 ## `app/routers/registrations.py`
 
@@ -1256,7 +1356,9 @@ def update_card(card_id: int, last_four_digits: str = Form(""), db: Session = De
     card.last_four_digits = digits
     db.commit()
     return RedirectResponse("/cadastros?ok=1", status_code=303)
+
 ```
+
 
 ## `app/routers/reports.py`
 
@@ -1355,7 +1457,9 @@ def backup_database():
         source.close()
     return FileResponse(temp_path, media_type="application/x-sqlite3", filename=f"backup-financas-{date.today().isoformat()}.db",
                         background=BackgroundTask(lambda: os.path.exists(temp_path) and os.remove(temp_path)))
+
 ```
+
 
 ## `app/routers/savings.py`
 
@@ -1436,7 +1540,9 @@ def create_movement(
         message = str(exc).replace(" ", "+")
         return RedirectResponse(f"/poupanca?erro={message}", status_code=303)
     return RedirectResponse("/poupanca?ok=1", status_code=303)
+
 ```
+
 
 ## `app/routers/transactions.py`
 
@@ -1667,7 +1773,9 @@ def update_fixed(
         except (ValueError, TypeError):
             db.rollback()
     return RedirectResponse("/transacoes/fixos", status_code=303)
+
 ```
+
 
 ## `app/schemas.py`
 
@@ -1711,7 +1819,9 @@ class FixedExpenseCreate(BaseModel):
     end_date: date | None = None
     account_id: int | None = None
     card_id: int | None = None
+
 ```
+
 
 ## `app/security.py`
 
@@ -1767,7 +1877,9 @@ def session_secret() -> str:
     if len(value) < 32:
         raise RuntimeError(f"Segredo de sessão inválido em {path}; apague-o com a aplicação parada para gerar outro.")
     return value
+
 ```
+
 
 ## `app/seed.py`
 
@@ -1837,13 +1949,17 @@ def seed_database(db: Session) -> None:
             if child_name not in existing_children:
                 db.add(Category(name=child_name, parent_id=root.id))
     db.commit()
+
 ```
+
 
 ## `app/services/__init__.py`
 
 ```python
 """Regras de negócio."""
+
 ```
+
 
 ## `app/services/finance.py`
 
@@ -1959,7 +2075,38 @@ def active_transactions_for_month(db: Session, year: int, month: int, by_cashflo
     return list(db.scalars(select(FinancialTransaction).where(
         column >= start, column <= end, FinancialTransaction.status != "cancelado"
     ).order_by(column.desc(), FinancialTransaction.id.desc())).all())
+
 ```
+
+
+## `app/services/local_time.py`
+
+```python
+"""Data e saudação usando o fuso horário local da família (Cuiabá)."""
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+LOCAL_TZ = ZoneInfo("America/Cuiaba")
+
+
+def local_now() -> datetime:
+    return datetime.now(LOCAL_TZ)
+
+
+def local_today():
+    return local_now().date()
+
+
+def greeting_for_hour(hour: int) -> str:
+    """Faixas convencionais: manhã 05–11h, tarde 12–17h, noite no restante."""
+    if 5 <= hour < 12:
+        return "Bom dia"
+    if 12 <= hour < 18:
+        return "Boa tarde"
+    return "Boa noite"
+
+```
+
 
 ## `app/services/recurring.py`
 
@@ -2008,7 +2155,9 @@ def ensure_fixed_transactions(db: Session, today: date | None = None, months_ahe
     if created:
         db.commit()
     return created
+
 ```
+
 
 ## `app/services/savings.py`
 
@@ -2028,7 +2177,9 @@ def savings_balance(db: Session, account: SavingsAccount) -> int:
         elif movement.kind == "retirada":
             balance -= movement.amount_cents
     return balance
+
 ```
+
 
 ## `app/static/css/app.css`
 
@@ -2384,12 +2535,12 @@ h3 { color: var(--ink); font-size: 14px; font-weight: 650; }
 .muted { color: var(--muted) !important; }
 .eyebrow { color: var(--green); font-size: 10px; font-weight: 800; letter-spacing: .16em; margin-bottom: 7px; }
 
-/* Navegação lateral recolhida; desktop expande ao hover/foco e pode ser fixada. */
+/* Navegação lateral recolhida; no desktop expande por hover ou fixação explícita. */
 .nav-grid { display: none !important; }
-.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 60; display: flex; flex-direction: column; width: var(--sidebar-width); padding: 18px 11px 14px; overflow-x: hidden; overflow-y: auto; background: #101720; color: #93a1b5; border-right: 1px solid #202a37; transition: width .22s ease, transform .22s ease, box-shadow .22s ease; scrollbar-width: thin; scrollbar-color: #344155 transparent; }
+.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 60; display: flex; flex-direction: column; width: var(--sidebar-width); padding: 18px 8px 14px; overflow-x: hidden; overflow-y: auto; background: #101720; color: #93a1b5; border-right: 1px solid #202a37; transition: width .22s ease, transform .22s ease, box-shadow .22s ease; scrollbar-width: thin; scrollbar-color: #344155 transparent; }
 html[data-theme="light"] .sidebar { background: #fff; color: #7c879d; border-right-color: #e4e8f0; }
-.sidebar:hover, .sidebar:focus-within, html.sidebar-pinned .sidebar { width: 252px; box-shadow: 12px 0 40px rgba(0, 0, 0, .2); }
-.sidebar-brand { display: flex; align-items: center; min-width: 230px; min-height: 48px; gap: 12px; padding: 2px 6px 17px; margin-bottom: 20px; border-bottom: 1px solid #263241; color: var(--ink); text-decoration: none; }
+.sidebar:hover, html.sidebar-pinned .sidebar { width: 252px; box-shadow: 12px 0 40px rgba(0, 0, 0, .2); }
+.sidebar-brand { display: flex; align-items: center; min-width: 0; width: 100%; min-height: 48px; gap: 12px; padding: 2px 6px 17px; margin-bottom: 20px; border-bottom: 1px solid #263241; color: var(--ink); text-decoration: none; }
 html[data-theme="light"] .sidebar-brand { border-bottom-color: #e6eaf2; }
 .sidebar-brand:hover { color: var(--ink); }
 .brand-mark { display: inline-grid; flex: 0 0 42px; width: 42px; height: 42px; place-items: center; border-radius: 14px; color: #101720; background: linear-gradient(145deg, #d9f99d, #45d6a4); box-shadow: 0 6px 18px rgba(69, 214, 164, .18); font-size: 13px; font-weight: 850; }
@@ -2397,11 +2548,11 @@ html[data-theme="light"] .sidebar-brand { border-bottom-color: #e6eaf2; }
 .brand-copy { display: block; min-width: 0; opacity: 0; transform: translateX(-5px); transition: opacity .14s ease, transform .14s ease; white-space: nowrap; pointer-events: none; }
 .brand-copy strong { display: block; font-size: 14px; line-height: 1.25; letter-spacing: -.35px; }
 .brand-copy small { display: block; color: #75859a; font-size: 8px; letter-spacing: .13em; margin-top: 4px; }
-.sidebar:hover .brand-copy, .sidebar:focus-within .brand-copy, html.sidebar-pinned .brand-copy { opacity: 1; transform: translateX(0); }
+.sidebar:hover .brand-copy, html.sidebar-pinned .brand-copy { opacity: 1; transform: translateX(0); }
 .sidebar-caption { padding: 0 10px 9px; color: #64748b; font-size: 8px; font-weight: 800; letter-spacing: .18em; white-space: nowrap; opacity: 0; transition: opacity .15s ease; }
-.sidebar:hover .sidebar-caption, .sidebar:focus-within .sidebar-caption, html.sidebar-pinned .sidebar-caption { opacity: 1; }
-.sidebar-nav { display: flex; flex-direction: column; gap: 5px; min-width: 230px; }
-.nav-item { position: relative; display: flex; align-items: center; gap: 15px; width: 100%; min-height: 46px; padding: 0 13px; overflow: hidden; border: 1px solid transparent; border-radius: 12px; color: #91a0b4; background: transparent; font-size: 12px; font-weight: 600; text-align: left; text-decoration: none; white-space: nowrap; transition: background .18s ease, color .18s ease, border-color .18s ease; }
+.sidebar:hover .sidebar-caption, html.sidebar-pinned .sidebar-caption { opacity: 1; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 5px; min-width: 0; width: 100%; }
+.nav-item { position: relative; display: flex; align-items: center; justify-content: center; gap: 0; width: 100%; min-height: 46px; padding: 0; overflow: hidden; border: 1px solid transparent; border-radius: 12px; color: #91a0b4; background: transparent; font-size: 12px; font-weight: 600; text-align: left; text-decoration: none; white-space: nowrap; transition: background .18s ease, color .18s ease, border-color .18s ease; }
 html[data-theme="light"] .nav-item { color: #7c879d; }
 .nav-item:hover { color: var(--ink); background: rgba(148, 163, 184, .09); }
 .nav-item.active { color: #d9f99d; background: linear-gradient(100deg, rgba(163, 230, 53, .15), rgba(69, 214, 164, .055)); border-color: rgba(163, 230, 53, .14); }
@@ -2409,13 +2560,18 @@ html[data-theme="light"] .nav-item.active { color: #4338ca; background: #eef2ff;
 .nav-item.active::before { content: ""; position: absolute; left: -1px; top: 10px; bottom: 10px; width: 3px; border-radius: 0 4px 4px 0; background: var(--green); }
 .nav-icon { display: inline-grid; flex: 0 0 22px; width: 22px; height: 22px; place-items: center; }
 .nav-icon svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
-.nav-label { display: block; opacity: 0; transform: translateX(-4px); transition: opacity .12s ease, transform .12s ease; pointer-events: none; }
-.sidebar:hover .nav-label, .sidebar:focus-within .nav-label, html.sidebar-pinned .nav-label { opacity: 1; transform: translateX(0); }
-.sidebar-bottom { display: flex; align-items: center; gap: 11px; min-width: 230px; margin-top: auto; padding: 18px 13px 5px; border-top: 1px solid #263241; color: #8291a6; font-size: 10px; white-space: nowrap; }
+.nav-label { display: block; flex: 0 1 auto; max-width: 0; overflow: hidden; opacity: 0; transform: translateX(-4px); white-space: nowrap; transition: max-width .20s ease, opacity .10s ease, transform .10s ease; pointer-events: none; }
+.sidebar:hover .nav-label, html.sidebar-pinned .sidebar .nav-label { max-width: 180px; opacity: 1; transform: translateX(0); }
+.sidebar-bottom { display: flex; align-items: center; gap: 11px; min-width: 0; width: 100%; margin-top: auto; padding: 18px 13px 5px; border-top: 1px solid #263241; color: #8291a6; font-size: 10px; white-space: nowrap; }
 html[data-theme="light"] .sidebar-bottom { border-top-color: #e6eaf2; }
 .sidebar-status-dot, .footer-dot { display: inline-block; flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: #45d6a4; box-shadow: 0 0 0 4px rgba(69, 214, 164, .1); }
 .app-main { min-width: 0; min-height: 100vh; margin-left: var(--sidebar-width); display: flex; flex-direction: column; transition: margin-left .22s ease; }
 html.sidebar-pinned .app-main { margin-left: 252px; }
+/* No modo recolhido os ícones ficam centralizados e os rótulos ocupam largura zero. */
+html:not(.sidebar-pinned):not(.sidebar-open) .sidebar:not(:hover) .sidebar-brand { justify-content: center; gap: 0; padding-left: 0; padding-right: 0; }
+html:not(.sidebar-pinned):not(.sidebar-open) .sidebar:not(:hover) .brand-copy { flex: 0 0 0; width: 0; max-width: 0; }
+html:not(.sidebar-pinned) .sidebar:not(:hover) .nav-item { justify-content: center; gap: 0; padding-left: 0; padding-right: 0; }
+.sidebar:hover .nav-item, html.sidebar-pinned .sidebar .nav-item { justify-content: flex-start; gap: 15px; padding: 0 13px; }
 .sidebar-overlay { display: none; }
 .topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 17px; min-height: 78px; padding: 13px clamp(18px, 3vw, 42px); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--ink); backdrop-filter: blur(18px); }
 .menu-toggle { flex: 0 0 38px; }
@@ -2696,6 +2852,16 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 .last-four-form .field { flex: 1; }
 .last-four-form input { padding: 8px; }
 
+
+.user-reset-details { min-width: 150px; }
+.user-reset-details > summary { display: inline-flex; list-style: none; cursor: pointer; }
+.user-reset-details > summary::-webkit-details-marker { display: none; }
+.user-reset-form { display: grid; gap: 9px; min-width: 220px; max-width: 300px; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-raised); }
+.user-reset-form .field { display: grid; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 650; }
+.user-reset-form input { padding: 8px 9px; }
+.user-reset-form .button { justify-self: start; }
+@media (max-width: 760px) { .user-reset-form { min-width: min(220px, calc(100vw - 90px)); } }
+
 @media (max-width: 1180px) {
   .bank-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-grid:not(.dashboard-metrics) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2709,8 +2875,10 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 @media (max-width: 760px) {
   :root { --sidebar-width: 0px; }
   .sidebar { width: 260px; max-width: calc(100vw - 54px); transform: translateX(-105%); padding: 17px 12px; box-shadow: none; }
-  .sidebar:hover, .sidebar:focus-within, html.sidebar-pinned .sidebar { width: 260px; }
+  .sidebar:hover, html.sidebar-pinned .sidebar, html.sidebar-open .sidebar { width: 260px; }
   .brand-copy, .sidebar-caption, .nav-label { opacity: 1; transform: none; }
+  html.sidebar-open .sidebar:not(:hover) .nav-item { justify-content: flex-start; gap: 15px; padding: 0 13px; }
+  html.sidebar-open .sidebar .nav-label { max-width: 190px; }
   .sidebar-overlay { position: fixed; inset: 0; z-index: 55; display: block; width: 100%; height: 100%; padding: 0; border: 0; background: rgba(0,0,0,.55); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease, visibility .2s ease; }
   html.sidebar-open .sidebar { transform: translateX(0); box-shadow: 18px 0 50px rgba(0,0,0,.3); }
   html.sidebar-open .sidebar-overlay { opacity: 1; visibility: visible; pointer-events: auto; }
@@ -2822,7 +2990,210 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Design tokens — Contas da Casa / interpretação inspirada no sistema Stripi.
+   Mantém o shell dark como padrão e o tema claro como alternativa. */
+:root {
+  color-scheme: dark;
+  --ink: #edf2ff;
+  --ink-secondary: #c2cbe0;
+  --green: #665efd;
+  --green-dark: #4434d4;
+  --green-soft: rgba(102, 94, 253, .15);
+  --paper: #0b1020;
+  --surface: #111a2c;
+  --surface-raised: #18233a;
+  --muted: #94a3bd;
+  --line: #293650;
+  --input-line: #405271;
+  --amber: #e8b76c;
+  --red: #ea2261;
+  --red-soft: rgba(234, 34, 97, .13);
+  --shadow: 0 8px 24px rgba(0, 55, 112, .12), 0 2px 6px rgba(0, 0, 0, .08);
+  --chart-text: #a2aec7;
+  --chart-grid: #2a3852;
+  --chart-income: #4bd6b2;
+  --chart-expense: #ea2261;
+  --chart-accent: #8d83ff;
+  font-family: Inter, "SF Pro Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-feature-settings: "ss01" 1;
+}
+html[data-theme="light"] {
+  color-scheme: light;
+  --ink: #0d253d;
+  --ink-secondary: #273951;
+  --green: #533afd;
+  --green-dark: #4434d4;
+  --green-soft: #f0efff;
+  --paper: #f6f9fc;
+  --surface: #ffffff;
+  --surface-raised: #f6f9fc;
+  --muted: #64748d;
+  --line: #e3e8ee;
+  --input-line: #a8c3de;
+  --amber: #9b6829;
+  --red: #ea2261;
+  --red-soft: #fff0f4;
+  --shadow: 0 1px 3px rgba(0, 55, 112, .08), 0 8px 24px rgba(0, 55, 112, .055);
+  --chart-text: #64748d;
+  --chart-grid: #e3e8ee;
+  --chart-income: #168c70;
+  --chart-expense: #ea2261;
+  --chart-accent: #533afd;
+}
+html, body { font-family: Inter, "SF Pro Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+body { font-size: 15px; font-weight: 300; line-height: 1.45; }
+a { color: var(--green); }
+a:hover { color: var(--green-dark); }
+button, input, select, textarea { font-family: inherit; }
+.money, .metric strong, .compare-card b, .savings-balance, .bank-card-number,
+.cashflow-footer strong, .invoice-total-metric > strong, .upcoming-value b,
+td.money, th.money, .metric-comparison { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; letter-spacing: -.025em; }
+h1 { font-size: clamp(26px, 3vw, 36px); font-weight: 300; line-height: 1.1; letter-spacing: -.045em; }
+h2 { font-size: 20px; font-weight: 300; line-height: 1.25; letter-spacing: -.025em; }
+h3 { font-size: 16px; font-weight: 400; letter-spacing: -.015em; }
+.eyebrow, .topbar-overline { color: var(--green); font-size: 10px; font-weight: 500; letter-spacing: .13em; }
+
+/* Navegação e cabeçalho usam navy profundo e acento índigo. */
+.sidebar { background: #10182b; border-right-color: #26334f; }
+html[data-theme="light"] .sidebar { background: #fff; border-right-color: var(--line); }
+.sidebar-brand { border-bottom-color: #293650; }
+html[data-theme="light"] .sidebar-brand { border-bottom-color: var(--line); }
+.brand-mark { color: #fff; background: linear-gradient(135deg, #665efd, #4434d4 72%, #ea2261); box-shadow: 0 6px 20px rgba(83, 58, 253, .28); border-radius: 12px; }
+.sidebar-caption { letter-spacing: .12em; }
+.nav-item { border-radius: 8px; font-weight: 400; }
+.nav-item.active { color: #fff; background: linear-gradient(100deg, rgba(83, 58, 253, .27), rgba(102, 94, 253, .08)); border-color: rgba(102, 94, 253, .28); }
+html[data-theme="light"] .nav-item.active { color: #4434d4; background: #f0efff; border-color: #dedaff; }
+.nav-item.active::before { background: var(--green); }
+.sidebar-status-dot, .footer-dot { background: var(--chart-income); box-shadow: 0 0 0 4px color-mix(in srgb, var(--chart-income) 12%, transparent); }
+.topbar { background: color-mix(in srgb, var(--surface) 92%, transparent); border-bottom-color: var(--line); }
+.topbar-heading strong { font-size: 15px; font-weight: 400; letter-spacing: -.02em; }
+.topbar-overline { margin-bottom: 3px; }
+.icon-button, .theme-toggle, .top-action { border-radius: 999px; }
+.icon-button { background: var(--surface); }
+.theme-toggle { padding: 8px 14px; min-height: 38px; font-size: 12px; font-weight: 400; }
+.top-action { min-height: 38px; padding: 8px 13px; font-size: 12px; font-weight: 400; }
+.top-action:hover { color: var(--ink); border-color: var(--green); background: var(--green-soft); }
+.user-avatar { border-radius: 50%; background: var(--green-soft); color: var(--green); }
+
+/* Cabeçalhos de página com mesh atmosférico, sem imagens nem requests externos. */
+.page-head { position: relative; isolation: isolate; overflow: hidden; padding: 25px 26px; margin-bottom: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.page-head::before { content: ""; position: absolute; z-index: 0; inset: 0; pointer-events: none; opacity: .72;
+  background:
+    radial-gradient(ellipse at 4% 0%, rgba(245, 233, 212, .23) 0%, transparent 34%),
+    radial-gradient(ellipse at 34% -12%, rgba(249, 107, 238, .17) 0%, transparent 33%),
+    radial-gradient(ellipse at 63% 0%, rgba(102, 94, 253, .26) 0%, transparent 36%),
+    radial-gradient(ellipse at 94% 20%, rgba(234, 34, 97, .16) 0%, transparent 28%);
+}
+.page-head > * { position: relative; z-index: 1; }
+html[data-theme="light"] .page-head::before { opacity: .78; }
+.page-head h1 { margin-bottom: 8px; }
+.page-head p:not(.eyebrow) { color: var(--muted); font-size: 14px; }
+.dashboard-head { min-height: 142px; }
+.headline-spark { color: var(--green); }
+.month-form, .filter-bar { gap: 9px; border-radius: 12px; background: color-mix(in srgb, var(--surface) 90%, transparent); box-shadow: var(--shadow); }
+.month-form { padding: 8px; }
+.month-form label, .filter-bar label { font-size: 12px; font-weight: 400; }
+input, select, textarea { border-color: var(--input-line); border-radius: 6px; padding: 10px 12px; font-size: 14px; font-weight: 300; }
+input:focus, select:focus, textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 18%, transparent); }
+
+/* Botões transacionais em formato pill; variantes permanecem distinguíveis. */
+.button { min-height: 40px; padding: 8px 16px; border: 1px solid var(--green); border-radius: 9999px; background: var(--green); color: #fff; font-size: 14px; font-weight: 400; letter-spacing: 0; box-shadow: none; }
+.button:hover { background: var(--green-dark); border-color: var(--green-dark); color: #fff; }
+.button-light { background: var(--surface); color: var(--green); border-color: var(--green); }
+.button-light:hover { background: var(--green-soft); color: var(--green-dark); border-color: var(--green-dark); }
+.button-danger { color: var(--red); background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 32%, var(--line)); }
+.button-danger:hover { background: var(--red); color: #fff; border-color: var(--red); }
+.button-small { min-height: 34px; padding: 8px 12px; border-radius: 9999px; font-size: 12px; }
+.text-button { color: var(--green); font-size: 12px; font-weight: 400; }
+.text-link { color: var(--green); font-size: 13px; font-weight: 400; }
+
+/* Cartões e painéis usam superfícies near-white no claro e navy no dashboard dark. */
+.metric, .compare-card, .panel { border-radius: 12px; border-color: var(--line); box-shadow: var(--shadow); }
+.metric, .compare-card { background: var(--surface); }
+.panel { padding: 24px; background: var(--surface); }
+.metric { padding: 22px 20px 18px; }
+.metric > span, .dashboard-metrics .metric-label-row .metric-label { font-size: 12px; font-weight: 400; }
+.metric strong, .dashboard-metrics .metric > strong { font-size: clamp(21px, 2.3vw, 29px); font-weight: 300; letter-spacing: -.04em; }
+.metric small, .dashboard-metrics .metric > small { font-size: 12px; font-weight: 300; }
+.dashboard-metrics .metric::after { opacity: .06; }
+.metric-income .metric-symbol { background: color-mix(in srgb, var(--chart-income) 14%, var(--surface)); }
+.metric-expense .metric-symbol { background: color-mix(in srgb, var(--chart-expense) 13%, var(--surface)); }
+.metric-balance .metric-symbol { background: color-mix(in srgb, var(--chart-accent) 14%, var(--surface)); }
+.metric-good { border-top-color: var(--chart-income); }
+.metric-danger { border-top-color: var(--red); }
+.section-heading h2, .panel-heading h2 { font-size: 20px; font-weight: 300; letter-spacing: -.025em; }
+.panel-heading p, .panel-heading .muted, .chart-panel .muted { font-size: 13px; }
+.section-heading p, .muted { color: var(--muted); }
+.cashflow-panel { padding: 24px; border-radius: 12px; }
+.cashflow-heading h2 { font-size: 22px; }
+.cashflow-legend { font-size: 12px; }
+.chart-period { border-radius: 9999px; padding: 7px 12px; font-size: 12px; }
+.cashflow-footer small { font-size: 12px; }
+.cashflow-footer strong { font-size: 15px; font-weight: 400; }
+.dashboard-lower-grid .panel-heading { margin-bottom: 12px; }
+
+/* Dados tabulares: contraste calmo e alinhamento consistente dos números. */
+table { font-size: 13px; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+th { background: var(--surface-raised); font-size: 10px; font-weight: 500; letter-spacing: .08em; }
+th, td { border-bottom-color: var(--line); padding: 13px 11px; }
+td.money, th.money { font-weight: 400; }
+tbody tr:hover { background: color-mix(in srgb, var(--green) 5%, transparent); }
+.subline { font-size: 11px; }
+.status { padding: 5px 9px; font-size: 10px; font-weight: 400; }
+.status-realizado { color: var(--chart-income); background: color-mix(in srgb, var(--chart-income) 13%, var(--surface)); }
+.status-previsto { color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, var(--surface)); }
+.status-cancelado { color: var(--red); background: var(--red-soft); }
+.notice { border-radius: 8px; font-size: 13px; }
+.empty-state { border-radius: 12px; font-size: 13px; }
+.upcoming-date { border-radius: 8px; background: var(--green-soft); color: var(--green); }
+.upcoming-detail b { font-size: 13px; font-weight: 400; }
+.upcoming-detail small, .upcoming-value b { font-size: 12px; }
+.budget-row small, .subline { line-height: 1.45; }
+.progress { background: color-mix(in srgb, var(--muted) 17%, var(--surface)); }
+.progress span { background: var(--chart-accent); }
+
+/* Telas de autenticação também usam a identidade índigo/navy. */
+.auth-body { position: relative; isolation: isolate; overflow: hidden; background: var(--paper); }
+.auth-body::before { content: ""; position: fixed; z-index: -1; inset: 0 0 auto; height: 44vh; pointer-events: none;
+  background: radial-gradient(ellipse at 12% 0%, rgba(245,233,212,.28), transparent 36%),
+    radial-gradient(ellipse at 38% 6%, rgba(249,107,238,.18), transparent 33%),
+    radial-gradient(ellipse at 64% 0%, rgba(102,94,253,.34), transparent 38%),
+    radial-gradient(ellipse at 92% 20%, rgba(234,34,97,.22), transparent 30%);
+}
+.auth-wrap { position: relative; z-index: 1; }
+.auth-panel { border-radius: 12px; border-color: var(--line); box-shadow: 0 8px 24px rgba(0,55,112,.13); }
+.auth-brand strong { font-size: 22px; font-weight: 300; letter-spacing: -.04em; }
+.auth-brand small { font-size: 13px; }
+.auth-panel > p { font-size: 14px; }
+.auth-submit { min-height: 44px; }
+
+/* Mantém leitura confortável e sem overflow em telefones estreitos. */
+@media (max-width: 760px) {
+  .page-head { padding: 20px 17px; }
+  .page-head h1 { font-size: clamp(26px, 7vw, 32px); }
+  .page-head p:not(.eyebrow) { font-size: 13px; }
+  .panel, .cashflow-panel { padding: 17px; }
+  .dashboard-metrics .metric { padding: 15px 13px; }
+  .dashboard-metrics .metric > strong { font-size: clamp(18px, 5vw, 24px); }
+  .month-form { border-radius: 10px; }
+  .month-form .button { min-height: 38px; padding: 8px 12px; }
+  .panel-heading h2, .section-heading h2 { font-size: 18px; }
+  .cashflow-footer { gap: 18px; flex-wrap: wrap; }
+  .cashflow-footer span { min-width: 0; }
+  table { font-size: 12px; }
+  th, td { padding: 11px 9px; }
+}
+@media (max-width: 380px) {
+  .page-head { padding: 17px 13px; }
+  .panel, .cashflow-panel { padding: 14px; }
+  .button { white-space: normal; }
+  .cashflow-heading { align-items: flex-start; }
+  .chart-period { padding: 6px 9px; font-size: 10px; }
+}
+
 ```
+
 
 ## `app/static/js/app.js`
 
@@ -2894,7 +3265,9 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
   });
   applyTheme(root.dataset.theme || 'dark');
 })();
+
 ```
+
 
 ## `app/static/js/htmx-lite.js`
 
@@ -2919,7 +3292,9 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
   });
   window.htmx = { ajax: (_method, url, options = {}) => fetch(url).then(r => r.text()).then(html => { if (options.target) document.querySelector(options.target).innerHTML = html; }) };
 })();
+
 ```
+
 
 ## `app/static/js/local-charts.js`
 
@@ -3096,7 +3471,9 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
     }
   };
 })();
+
 ```
+
 
 ## `app/templates/base.html`
 
@@ -3106,19 +3483,19 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0f14">
-  <title>{% block title %}Finanças da Família{% endblock %}</title>
+  <meta name="theme-color" content="#10182b">
+  <title>{% block title %}Contas da Casa · Finanças da Família{% endblock %}</title>
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('casa-theme')||'dark'}catch(e){}</script>
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/app.css?v=20261028-stripe>
   <script defer src="/static/js/htmx-lite.js"></script>
   <script defer src="/static/js/local-charts.js"></script>
   <script defer src="/static/js/app.js"></script>
 </head>
 <body>
   <aside class="sidebar" id="app-sidebar" aria-label="Menu principal">
-    <a class="sidebar-brand" href="/" aria-label="Casa em Ordem — página inicial">
+    <a class="sidebar-brand" href="/" aria-label="Contas da Casa — página inicial">
       <span class="brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/><path d="M9.5 10.5h5"/></svg></span>
-      <span class="brand-copy"><strong>Casa em Ordem</strong><small>FINANÇAS DA FAMÍLIA</small></span>
+      <span class="brand-copy"><strong>Contas da Casa</strong><small>FINANÇAS DA FAMÍLIA</small></span>
     </a>
     <div class="sidebar-caption">MENU PRINCIPAL</div>
     <nav class="sidebar-nav" aria-label="Navegação principal">
@@ -3142,7 +3519,7 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
   <div class="app-main">
     <header class="topbar">
       <button type="button" class="icon-button menu-toggle" id="sidebar-toggle" aria-label="Abrir menu" aria-controls="app-sidebar" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-      <div class="topbar-heading"><span class="topbar-overline">FINANÇAS FAMILIARES</span><strong>{% if active_nav == 'dashboard' %}Visão geral{% elif active_nav == 'transacoes' %}Gastos{% elif active_nav == 'fixos' %}Gastos fixos{% elif active_nav == 'planejados' %}Planejados{% elif active_nav == 'receitas' %}Receitas{% elif active_nav == 'cartoes' %}Cartões e faturas{% elif active_nav == 'poupanca' %}Poupança{% elif active_nav == 'orcamento' %}Orçamento{% elif active_nav == 'projecao' %}Projeção financeira{% elif active_nav == 'historico' %}Histórico{% elif active_nav == 'relatorios' %}Relatórios{% elif active_nav == 'cadastros' %}Cadastros{% elif request.url.path.startswith('/usuarios') %}Usuários{% else %}Casa em Ordem{% endif %}</strong></div>
+      <div class="topbar-heading"><span class="topbar-overline">FINANÇAS FAMILIARES</span><strong>{% if active_nav == 'dashboard' %}Visão geral{% elif active_nav == 'transacoes' %}Gastos{% elif active_nav == 'fixos' %}Gastos fixos{% elif active_nav == 'planejados' %}Planejados{% elif active_nav == 'receitas' %}Receitas{% elif active_nav == 'cartoes' %}Cartões e faturas{% elif active_nav == 'poupanca' %}Poupança{% elif active_nav == 'orcamento' %}Orçamento{% elif active_nav == 'projecao' %}Projeção financeira{% elif active_nav == 'historico' %}Histórico{% elif active_nav == 'relatorios' %}Relatórios{% elif active_nav == 'cadastros' %}Cadastros{% elif request.url.path.startswith('/usuarios') %}Usuários{% else %}Contas da Casa{% endif %}</strong></div>
       <div class="top-actions">
         <span class="top-date"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18"/></svg>{{ today.strftime('%d/%m/%Y') }}</span>
         <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Alternar tema" title="Alternar tema"><svg class="theme-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg><span class="theme-text">Material Light</span></button>
@@ -3151,33 +3528,37 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
     </header>
     <main class="container">
       {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
-      {% if ok %}<div class="notice success">Alterações salvas.</div>{% endif %}
+      {% if ok %}<div class="notice success">{% if ok == 'criado' %}Usuário criado. A troca de senha será exigida no primeiro acesso.{% elif ok == 'senha' %}Senha redefinida. O usuário deverá criar uma nova senha no próximo acesso.{% else %}Alterações salvas.{% endif %}</div>{% endif %}
       {% block content %}{% endblock %}
     </main>
     <footer class="footer"><span class="footer-dot"></span> Seus dados financeiros · BRL · Armazenados localmente</footer>
   </div>
 </body>
 </html>
+
 ```
+
 
 ## `app/templates/budgets.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Orçamento mensal · Casa em ordem{% endblock %}
+{% block title %}Orçamento mensal · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">CONTROLE DO PLANEJADO</p><h1>Orçamento mensal</h1><p class="muted">O gasto contabilizado no orçamento é classificado pela data da compra e pelo status realizado.</p></div></section>
 <form class="filter-bar" method="get"><label for="mes">Mês</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button button-light">Ver mês</button></form>
 <form class="panel form-panel" method="post" action="/orcamento"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><h2>Definir orçamento por categoria</h2><div class="form-grid"><input type="hidden" name="mes" value="{{ mes }}"><label class="field">Categoria<select name="category_id" required>{% for c in category_options %}<option value="{{ c.id }}">{{ c.label }}</option>{% endfor %}</select></label><label class="field">Valor mensal (R$)<input name="amount" inputmode="decimal" placeholder="0,00" required></label></div><div class="form-actions"><button class="button" type="submit">Salvar orçamento</button></div></form>
 <section class="panel"><div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Orçamento</th><th>Realizado</th><th>Uso</th><th></th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.label }}</td><td>{{ row.budget.amount_cents|brl }}</td><td>{{ row.spent|brl }}</td><td><div class="budget-cell"><div class="progress"><span class="{% if row.over %}over{% endif %}" style="width:{{ row.percent if row.percent < 100 else 100 }}%"></span></div><small class="{% if row.over %}danger-text{% endif %}">{{ row.percent }}%{% if row.over %} · excedido{% endif %}</small></div></td><td><form method="post" action="/orcamento/{{ row.budget.id }}/excluir" onsubmit="return confirm('Excluir este orçamento?')"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="text-button danger-text">Excluir</button></form></td></tr>{% else %}<tr><td colspan="5" class="empty-cell">Nenhum orçamento cadastrado neste mês.</td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/cards.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Cartões e faturas · Casa em Ordem{% endblock %}
+{% block title %}Cartões e faturas · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">CARTEIRA FAMILIAR</p><h1>Cartões e faturas</h1><p class="muted">Uma visão rápida dos cartões da família e dos compromissos de crédito.</p></div><a class="button button-light" href="/cadastros">＋ Gerenciar cartões</a></section>
 <section class="wallet-section"><div class="section-heading"><div><h2>Seus cartões</h2><p class="muted">Os números completos não são armazenados, apenas os quatro últimos dígitos.</p></div><span class="wallet-count">{{ all_cards|length }} cartão(ões)</span></div>
@@ -3191,7 +3572,9 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
   {% else %}<div class="empty-state">Não há cartões de crédito ativos. Cartões de débito e Vale Alimentação aparecem acima e lançam a saída na data da compra.</div>{% endif %}
 </section>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/change_password.html`
 
@@ -3202,12 +3585,12 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#12352d">
-  <title>Alterar senha · Casa em Ordem</title>
+  <title>Alterar senha · Contas da Casa</title>
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body class="auth-body">
   <main class="auth-wrap">
-    <div class="auth-brand"><span class="brand-mark">R$</span><div><strong>Casa em Ordem</strong><small>Finanças da família</small></div></div>
+    <div class="auth-brand"><span class="brand-mark">R$</span><div><strong>Contas da Casa</strong><small>Finanças da família</small></div></div>
     <section class="panel auth-panel">
       <p class="eyebrow">SEGURANÇA DA CONTA</p>
       <h1>{% if mandatory %}Crie sua senha{% else %}Alterar senha{% endif %}</h1>
@@ -3226,16 +3609,18 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
   </main>
 </body>
 </html>
+
 ```
+
 
 ## `app/templates/dashboard.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Visão geral · Casa em Ordem{% endblock %}
+{% block title %}Visão geral · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head dashboard-head">
-  <div><p class="eyebrow">PAINEL FINANCEIRO</p><h1>Bom dia, família <span class="headline-spark">✦</span></h1><p class="muted">Aqui está o resumo de {{ '%02d'|format(month) }}/{{ year }}.</p></div>
+  <div><p class="eyebrow">PAINEL FINANCEIRO</p><h1>{{ greeting }}, família <span class="headline-spark">✦</span></h1><p class="muted">Aqui está o resumo de {{ '%02d'|format(month) }}/{{ year }}.</p></div>
   <form class="month-form" method="get" action="/"><label for="mes">Período</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button" type="submit">Atualizar</button></form>
 </section>
 <section class="metric-grid dashboard-metrics">
@@ -3265,13 +3650,15 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 </section>
 <script id="chart-data" type="application/json">{{ chart_payload|tojson }}</script>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/fixed.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Gastos fixos · Casa em ordem{% endblock %}
+{% block title %}Gastos fixos · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">RECORRÊNCIA MENSAL</p><h1>Gastos fixos</h1><p class="muted">Ocorrências são criadas automaticamente até 12 meses à frente. Ajuste um mês específico em Gastos, sem alterar os demais.</p></div></section>
 <form class="panel form-panel" method="post" action="/transacoes/fixos"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><h2>Novo gasto recorrente</h2><div class="form-grid">
@@ -3290,13 +3677,15 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 <label class="field">Situação<select name="active"><option value="sim" {% if item.active %}selected{% endif %}>Ativa</option><option value="nao" {% if not item.active %}selected{% endif %}>Inativa</option></select></label><div class="form-actions"><button class="button button-small" type="submit">Salvar regra</button></div>
 </form></details>{% endfor %}</div>{% else %}<div class="empty-state">Cadastre aqui colégio, internet, seguro e outros compromissos mensais.</div>{% endif %}
 {% endblock %}
+
 ```
+
 
 ## `app/templates/history.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Resumo mensal · Casa em ordem{% endblock %}
+{% block title %}Resumo mensal · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">CONSULTA HISTÓRICA</p><h1>Resumo do mês</h1><p class="muted">Os relatórios por categoria seguem a data da compra, não a data de vencimento do cartão.</p></div></section>
 <form class="filter-bar" method="get"><label for="mes">Mês/ano</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button button-light">Consultar</button></form>
@@ -3308,13 +3697,15 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 </div>
 <section class="panel"><h2>Maiores gastos do mês</h2><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pessoa</th><th>Cartão</th><th>Valor</th></tr></thead><tbody>{% for item in top_expenses %}<tr><td>{{ item.purchase_date|date_br }}</td><td>{{ item.description }}</td><td>{{ item.category.name }}</td><td>{{ item.person.name }}</td><td>{{ item.card.name if item.card else '—' }}</td><td class="money">{{ item.amount_cents|brl }}</td></tr>{% else %}<tr><td class="empty-cell" colspan="6">Sem gastos realizados neste mês.</td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/incomes.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Receitas · Casa em ordem{% endblock %}
+{% block title %}Receitas · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">ENTRADAS E DESCONTOS</p><h1>Receitas</h1><p class="muted">Plano de saúde, INSS e IR em folha são informativos e não entram novamente nas despesas.</p></div></section>
 <section class="metric-grid metric-grid-two"><article class="metric metric-good"><span>Receitas incluídas no caixa</span><strong>{{ cash_total|brl }}</strong><small>Salários e rendas extras lançados no mês</small></article><article class="metric"><span>Descontos em folha informativos</span><strong>{{ deductions|brl }}</strong><small>Não duplicados como despesa</small></article></section>
@@ -3327,7 +3718,9 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 <section class="section-heading"><div><h2>Lançamentos de {{ mes[5:7] }}/{{ mes[:4] }}</h2></div></section>
 <div class="panel"><div class="table-wrap"><table><thead><tr><th>Data</th><th>Pessoa</th><th>Tipo / descrição</th><th>Tratamento</th><th>Valor</th><th></th></tr></thead><tbody>{% for item in rows %}<tr><td>{{ item.happened_on|date_br }}</td><td>{{ item.person.name }}</td><td>{{ kinds[item.kind] }}<small class="subline">{{ item.description }}</small></td><td>{% if item.included_in_cashflow %}<span class="status status-realizado">No fluxo</span>{% else %}<span class="status status-previsto">Informativo</span>{% endif %}</td><td class="money">{{ item.amount_cents|brl }}</td><td><form method="post" action="/receitas/{{ item.id }}/excluir" onsubmit="return confirm('Excluir este lançamento?')"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="text-button danger-text" type="submit">Excluir</button></form></td></tr>{% else %}<tr><td class="empty-cell" colspan="6">Nenhum lançamento neste mês.</td></tr>{% endfor %}</tbody></table></div></div>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/login.html`
 
@@ -3337,13 +3730,13 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#12352d">
-  <title>Entrar · Casa em Ordem</title>
-  <link rel="stylesheet" href="/static/css/app.css">
+  <meta name="theme-color" content="#10182b">
+  <title>Entrar · Contas da Casa</title>
+  <link rel="stylesheet" href="/static/css/app.css?v=20261028-stripe>
 </head>
 <body class="auth-body">
   <main class="auth-wrap">
-    <div class="auth-brand"><span class="brand-mark">R$</span><div><strong>Casa em Ordem</strong><small>Finanças da família</small></div></div>
+    <div class="auth-brand"><span class="brand-mark">R$</span><div><strong>Contas da Casa</strong><small>Finanças da família</small></div></div>
     <section class="panel auth-panel">
       <p class="eyebrow">ÁREA PROTEGIDA</p>
       <h1>Entrar</h1>
@@ -3362,7 +3755,9 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
   </main>
 </body>
 </html>
+
 ```
+
 
 ## `app/templates/partials/bank_card.html`
 
@@ -3380,7 +3775,9 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
   <div class="bank-card-number" aria-label="Final do cartão {{ card.last_four_digits if card.last_four_digits else 'não informado' }}">•••• &nbsp;•••• &nbsp;•••• &nbsp;<strong>{{ card.last_four_digits if card.last_four_digits else '••••' }}</strong></div>
   <div class="bank-card-foot"><div><small>TITULAR</small><strong>{{ card.owner.name }}</strong></div><div class="bank-card-label"><small>CARTÃO</small><strong>{{ card.name }}</strong></div></div>
 </article>
+
 ```
+
 
 ## `app/templates/partials/upcoming_rows.html`
 
@@ -3388,13 +3785,15 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 {% if rows %}
 <div class="upcoming-list">{% for item in rows %}<div class="upcoming-item"><div class="upcoming-date"><b>{{ item.cashflow_date.strftime('%d') }}</b><small>{{ item.cashflow_date.strftime('%m/%Y') }}</small></div><div class="upcoming-detail"><b>{{ item.description }}</b><small>{{ item.person.name }} · {% if item.card %}{{ item.card.name }}{% elif item.account %}{{ item.account.name }}{% else %}Sem conta/cartão{% endif %}</small><small>{{ item.category.name }}</small></div><div class="upcoming-value"><b>{{ item.amount_cents|brl }}</b><span class="status status-{{ item.status }}">{{ item.status }}</span></div></div>{% endfor %}</div>
 {% else %}<div class="empty-state">Nenhum vencimento previsto para os próximos 45 dias.</div>{% endif %}
+
 ```
+
 
 ## `app/templates/planned.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Gastos planejados · Casa em ordem{% endblock %}
+{% block title %}Gastos planejados · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">PREVISÃO</p><h1>Gastos planejados</h1><p class="muted">Marque como realizado quando pago/confirmado, edite ou cancele o compromisso.</p></div><a class="button" href="/transacoes/nova?tipo=previsto">+ Planejar gasto</a></section>
 <section class="panel"><div class="table-wrap"><table><thead><tr><th>Data de caixa</th><th>Descrição</th><th>Categoria / responsável</th><th>Pagamento</th><th>Valor</th><th>Ações</th></tr></thead><tbody>
@@ -3402,25 +3801,29 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 {% else %}<tr><td colspan="6" class="empty-cell">Nenhum gasto com status previsto.</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/projection.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Projeção · Casa em ordem{% endblock %}
+{% block title %}Projeção · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">PLANEJAMENTO</p><h1>Projeção de 12 meses</h1><p class="muted">Inclui gastos previstos/realizados conforme o vencimento de caixa. Receitas futuras precisam ser cadastradas com a respectiva data.</p></div><a class="button" href="/transacoes/nova?tipo=previsto">+ Planejar gasto</a></section>
 <div class="panel"><div class="table-wrap"><table><thead><tr><th>Mês</th><th>Receitas cadastradas</th><th>Despesas/compromissos</th><th>Saldo previsto</th></tr></thead><tbody>{% for row in months %}<tr><td><b>{{ row.name }}</b></td><td>{{ row.income|brl }}</td><td>{{ row.expenses|brl }}</td><td class="money {% if row.balance < 0 %}danger-text{% else %}good-text{% endif %}">{{ row.balance|brl }}</td></tr>{% endfor %}</tbody></table></div></div>
 <div class="notice info">A projeção não presume um salário futuro automaticamente: cadastre entradas com a data esperada para que apareçam no mês correspondente. Despesas fixas ativas são geradas automaticamente.</div>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/registrations.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Cadastros · Casa em ordem{% endblock %}
+{% block title %}Cadastros · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">CONFIGURAÇÃO DA CASA</p><h1>Cadastros</h1><p class="muted">Gerencie pessoas, categorias, contas e cartões usados no dia a dia.</p></div></section>
 <div class="registration-grid">
@@ -3484,25 +3887,29 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/reports.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Relatórios e backup · Casa em ordem{% endblock %}
+{% block title %}Relatórios e backup · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">SEUS DADOS</p><h1>Relatórios e backup</h1><p class="muted">Exporte o período em CSV ou baixe uma cópia consistente do banco SQLite.</p></div></section>
 <section class="panel form-panel"><h2>Exportar CSV por período</h2><form method="get" action="/exportar.csv" class="form-grid"><label class="field">Data inicial<input type="date" name="inicio" value="{{ default_start }}" required></label><label class="field">Data final<input type="date" name="fim" value="{{ default_end }}" required></label><div class="form-actions"><button class="button" type="submit">Exportar CSV</button></div></form><p class="muted helper-text">O CSV inclui despesas pela data da compra e receitas/descontos pela data do lançamento, com valor em centavos e reais, status, conta, cartão e parcela.</p></section>
 <section class="panel backup-panel"><div><h2>Backup completo do banco</h2><p class="muted">Baixa o arquivo .db com cadastros, movimentos, orçamentos e regras recorrentes. Guarde a cópia em local seguro.</p></div><a class="button" href="/backup.db">Baixar backup .db</a></section>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/savings.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Poupança · Casa em ordem{% endblock %}
+{% block title %}Poupança · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">RESERVAS E APLICAÇÕES</p><h1>Poupança</h1><p class="muted">Acompanhe o capital de cada pessoa. Depósitos e juros aumentam o saldo; retiradas diminuem.</p></div></section>
 <section class="metric-grid metric-grid-two">
@@ -3549,13 +3956,15 @@ document.addEventListener('DOMContentLoaded', function () {
 {% else %}<tr><td colspan="5" class="empty-cell">Ainda não há movimentações registradas.</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/transaction_form.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}{{ title }} · Casa em ordem{% endblock %}
+{% block title %}{{ title }} · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">MOVIMENTAÇÃO</p><h1>{{ title }}</h1><p class="muted">Valores em reais; parcelamento gera uma linha por fatura de crédito.</p></div><a class="button button-light" href="/transacoes">Voltar</a></section>
 <form class="panel form-panel" method="post" action="{{ form_action }}"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -3589,13 +3998,15 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/transactions.html`
 
 ```html
 {% extends "base.html" %}
-{% block title %}Gastos · Casa em ordem{% endblock %}
+{% block title %}Gastos · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">LANÇAMENTOS</p><h1>Gastos</h1><p class="muted">Relatórios por categoria usam a data da compra.</p></div><a class="button" href="/transacoes/nova">+ Novo gasto</a></section>
 <form class="filter-bar" method="get"><label for="mes">Mês da compra</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button button-light" type="submit">Filtrar</button></form>
@@ -3605,101 +4016,65 @@ document.addEventListener('DOMContentLoaded', function () {
 </tbody></table></div></section>
 <div class="floating-actions"><a class="button" href="/transacoes/nova">+ Lançar gasto</a><a class="button button-light" href="/transacoes/nova?tipo=previsto">+ Planejar gasto</a></div>
 {% endblock %}
+
 ```
+
 
 ## `app/templates/users.html`
 
 ```html
-<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#12352d">
-  <title>Usuários · Casa em Ordem</title>
-  <link rel="stylesheet" href="/static/css/app.css">
-  <script defer src="/static/js/app.js"></script>
-</head>
-<body>
-  <header class="topbar">
-    <a class="brand" href="/" aria-label="Página inicial"><span class="brand-mark">R$</span><span>Casa em ordem<small>Finanças da família</small></span></a>
-    <div class="top-actions"><a class="top-action" href="/alterar-senha">Alterar senha</a><form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="top-action" type="submit">Sair</button></form></div>
-  </header>
-  <nav class="nav-grid" aria-label="Navegação principal"><a class="nav-item" href="/">Visão geral</a><a class="nav-item" href="/cadastros">Cadastros</a><a class="nav-item active" href="/usuarios">Usuários</a></nav>
-  <main class="container">
-    {% if erro %}<div class="notice error" role="alert">{{ erro }}</div>{% endif %}
-    {% if ok %}<div class="notice success">Usuário criado. Ele deverá trocar a senha no primeiro acesso.</div>{% endif %}
-    <div class="page-head"><div><p class="eyebrow">ADMINISTRAÇÃO</p><h1>Usuários</h1><p class="muted">Somente o Admin pode criar contas. Novos usuários precisam trocar a senha no primeiro acesso.</p></div></div>
-    <section class="panel auth-user-form">
-      <h2>Criar usuário</h2>
-      <form method="post" action="/usuarios" class="form-grid">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <label class="field">Nome de usuário<input name="username" required minlength="3" maxlength="32" autocomplete="off" pattern="[A-Za-z0-9_.-]{3,32}"><small class="subline">3–32 caracteres: letras, números, ponto, hífen ou sublinhado.</small></label>
-        <label class="field">Senha provisória<input name="password" type="password" required minlength="12" autocomplete="new-password"></label>
-        <label class="field">Confirme a senha<input name="confirm_password" type="password" required minlength="12" autocomplete="new-password"></label>
-        <div class="form-actions"><button class="button" type="submit">Criar usuário</button></div>
-      </form>
-    </section>
-    <section class="panel section-gap">
-      <h2>Contas cadastradas</h2>
-      <div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Estado</th><th>Criado em</th></tr></thead><tbody>
-      {% for user in users %}<tr><td>{{ user.username }}{% if user.id == current_user.id %}<small class="subline">Sua conta</small>{% endif %}</td><td>{% if user.is_admin %}Administrador{% else %}Usuário{% endif %}</td><td>{% if not user.is_active %}Inativo{% elif user.must_change_password %}Troca de senha pendente{% else %}Ativo{% endif %}</td><td>{{ user.created_at.strftime('%d/%m/%Y') }}</td></tr>{% endfor %}
-      </tbody></table></div>
-    </section>
-  </main>
-  <footer class="footer">Dados guardados no banco local · Acesso administrativo</footer>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Usuários · Contas da Casa{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">ADMINISTRAÇÃO</p>
+    <h1>Usuários</h1>
+    <p class="muted">Crie contas e redefina senhas provisórias. A próxima entrada exige que o usuário escolha uma nova senha.</p>
+  </div>
+</section>
+<section class="panel auth-user-form">
+  <div class="panel-heading"><div><h2>Criar usuário</h2><p class="muted">A senha inicial deve ter pelo menos 12 caracteres.</p></div></div>
+  <form method="post" action="/usuarios" class="form-grid">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="field">Nome de usuário<input name="username" required minlength="3" maxlength="32" autocomplete="off" pattern="[A-Za-z0-9_.-]{3,32}"><small class="subline">3–32 caracteres: letras, números, ponto, hífen ou sublinhado.</small></label>
+    <label class="field">Senha provisória<input name="password" type="password" required minlength="12" autocomplete="new-password"></label>
+    <label class="field">Confirme a senha<input name="confirm_password" type="password" required minlength="12" autocomplete="new-password"></label>
+    <div class="form-actions"><button class="button" type="submit">Criar usuário</button></div>
+  </form>
+</section>
+<section class="panel section-gap">
+  <div class="panel-heading"><div><h2>Contas cadastradas</h2><p class="muted">Redefinir a senha encerra as sessões anteriores dessa conta.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Estado</th><th>Criado em</th><th>Segurança</th></tr></thead><tbody>
+  {% for user in users %}
+    <tr>
+      <td>{{ user.username }}{% if user.id == current_user.id %}<small class="subline">Sua conta</small>{% endif %}</td>
+      <td>{% if user.is_admin %}Administrador{% else %}Usuário{% endif %}</td>
+      <td>{% if not user.is_active %}Inativo{% elif user.must_change_password %}Troca de senha pendente{% else %}Ativo{% endif %}</td>
+      <td>{{ user.created_at.strftime('%d/%m/%Y') }}</td>
+      <td>
+        {% if user.id == current_user.id %}
+          <a class="button button-light button-small" href="/alterar-senha">Alterar sua senha</a>
+        {% else %}
+          <details class="user-reset-details">
+            <summary class="button button-light button-small">Redefinir senha</summary>
+            <form method="post" action="/usuarios/{{ user.id }}/senha" class="user-reset-form">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <label class="field">Nova senha provisória<input type="password" name="new_password" required minlength="12" autocomplete="new-password"></label>
+              <label class="field">Confirmar senha<input type="password" name="confirm_password" required minlength="12" autocomplete="new-password"></label>
+              <button class="button button-small" type="submit">Salvar nova senha</button>
+            </form>
+          </details>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}
+
 ```
 
-## `docker-compose.yml`
-
-```yaml
-services:
-  familia-financas:
-    build: .
-    container_name: familia-financas
-    ports:
-      - "8080:8080"
-    volumes:
-      - familia_financas_data:/data
-    environment:
-      TZ: America/Cuiaba
-      DATABASE_URL: sqlite:////data/financas.db
-      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
-      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "${FORWARDED_ALLOW_IPS:-127.0.0.1}"]
-    restart: unless-stopped
-volumes:
-  familia_financas_data:
-```
-
-## `requirements.txt`
-
-```text
-fastapi==0.115.12
-uvicorn[standard]==0.34.2
-SQLAlchemy==2.0.40
-Jinja2==3.1.6
-python-multipart==0.0.20
-pydantic==2.11.4
-argon2-cffi==23.1.0
-itsdangerous==2.2.0
-```
-
-## `start.sh`
-
-```bash
-#!/bin/sh
-set -eu
-# O volume já existia nas versões anteriores, então corrigimos proprietário e permissões ao iniciar.
-mkdir -p /data
-chown -R app:app /data
-chmod 700 /data
-find /data -maxdepth 1 -type f -exec chmod 600 {} \;
-umask 077
-exec gosu app "$@"
-```
 
 ## `tests/test_auth_flow.py`
 
@@ -3719,7 +4094,7 @@ os.environ["COOKIE_SECURE"] = "false"
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
-from app.models import Person, CreditCard  # noqa: E402
+from app.models import Person, CreditCard, User  # noqa: E402
 
 
 def csrf_token(html: str) -> str:
@@ -3770,6 +4145,7 @@ class AuthenticationFlowTests(unittest.TestCase):
         self.assertIn('id="chart-cashflow"', dashboard.text)
         self.assertIn('class="sidebar"', dashboard.text)
         self.assertIn('data-theme="dark"', dashboard.text)
+        self.assertRegex(dashboard.text, r'(Bom dia|Boa tarde|Boa noite), família')
 
         # O cadastro armazena apenas os quatro últimos dígitos, exibidos no cartão visual.
         db = SessionLocal()
@@ -3809,21 +4185,45 @@ class AuthenticationFlowTests(unittest.TestCase):
             "_csrf": token,
         }, follow_redirects=False)
         self.assertEqual(response.status_code, 303)
-        self.assertIn("/usuarios?ok=1", response.headers["location"])
+        self.assertIn("/usuarios?ok=criado", response.headers["location"])
+
+        # Admin pode redefinir a senha de outro usuário e força a troca no próximo login.
+        db = SessionLocal()
+        try:
+            wife_user_id = db.scalar(__import__("sqlalchemy").select(User.id).where(User.username_key == "esposa"))
+        finally:
+            db.close()
+        users_page = self.client.get("/usuarios")
+        self.assertIn(f'action="/usuarios/{wife_user_id}/senha"', users_page.text)
+        token = csrf_token(users_page.text)
+        response = self.client.post(f"/usuarios/{wife_user_id}/senha", data={
+            "new_password": "SenhaProvisoriaNova2026!",
+            "confirm_password": "SenhaProvisoriaNova2026!",
+            "_csrf": token,
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("/usuarios?ok=senha", response.headers["location"])
+        db = SessionLocal()
+        try:
+            wife_user = db.get(User, wife_user_id)
+            self.assertTrue(wife_user.must_change_password)
+            self.assertGreaterEqual(wife_user.session_version, 1)
+        finally:
+            db.close()
 
         response = self.client.post("/logout", data={"_csrf": token}, follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         response = self.client.get("/login")
         token = csrf_token(response.text)
         response = self.client.post("/login", data={
-            "username": "esposa", "password": "PrimeiraSenha2026!", "next_url": "/", "_csrf": token,
+            "username": "esposa", "password": "SenhaProvisoriaNova2026!", "next_url": "/", "_csrf": token,
         }, follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         self.assertIn("/alterar-senha", response.headers["location"])
         response = self.client.get("/alterar-senha")
         token = csrf_token(response.text)
         response = self.client.post("/alterar-senha", data={
-            "current_password": "PrimeiraSenha2026!",
+            "current_password": "SenhaProvisoriaNova2026!",
             "new_password": "OutraSenhaSegura2026!",
             "confirm_password": "OutraSenhaSegura2026!",
             "_csrf": token,
@@ -3836,7 +4236,38 @@ class AuthenticationFlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 ```
+
+
+## `tests/test_local_time.py`
+
+```python
+import unittest
+from app.services.local_time import greeting_for_hour
+
+
+class LocalGreetingTests(unittest.TestCase):
+    def test_morning(self):
+        self.assertEqual(greeting_for_hour(5), "Bom dia")
+        self.assertEqual(greeting_for_hour(11), "Bom dia")
+
+    def test_afternoon(self):
+        self.assertEqual(greeting_for_hour(12), "Boa tarde")
+        self.assertEqual(greeting_for_hour(17), "Boa tarde")
+
+    def test_night(self):
+        self.assertEqual(greeting_for_hour(0), "Boa noite")
+        self.assertEqual(greeting_for_hour(4), "Boa noite")
+        self.assertEqual(greeting_for_hour(18), "Boa noite")
+        self.assertEqual(greeting_for_hour(23), "Boa noite")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+```
+
 
 ## `tests/test_services.py`
 
@@ -3940,4 +4371,5 @@ class FinanceServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 ```

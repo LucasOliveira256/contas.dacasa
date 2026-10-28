@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Receitas · Casa em ordem{% endblock %}
+{% block title %}Receitas · Contas da Casa{% endblock %}
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">ENTRADAS E DESCONTOS</p><h1>Receitas</h1><p class="muted">Plano de saúde, INSS e IR em folha são informativos e não entram novamente nas despesas.</p></div></section>
 <section class="metric-grid metric-grid-two"><article class="metric metric-good"><span>Receitas incluídas no caixa</span><strong>{{ cash_total|brl }}</strong><small>Salários e rendas extras lançados no mês</small></article><article class="metric"><span>Descontos em folha informativos</span><strong>{{ deductions|brl }}</strong><small>Não duplicados como despesa</small></article></section>
