@@ -1,8 +1,10 @@
 """Testes de descontos no saldo, receitas recorrentes, edição de cartões e migração do banco."""
 import os
+import re
 import tempfile
 import unittest
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
 from sqlalchemy import create_engine, inspect, select, text
@@ -399,6 +401,19 @@ class MigrationTests(unittest.TestCase):
             session.add(Income(person_id=1, kind="extra", happened_on=date(2026, 10, 6), amount_cents=100))
             session.commit()
         engine.dispose()
+
+
+class TemplateMarkupTests(unittest.TestCase):
+    def test_stylesheet_and_script_tags_have_balanced_quotes(self):
+        """Uma aspa faltando em <link> faz o navegador ignorar o CSS e o layout inteiro desmonta."""
+        templates = Path(__file__).resolve().parent.parent / "app" / "templates"
+        link = re.compile(r'<link rel="stylesheet" href="[^"\s>]+">')
+        for path in templates.rglob("*.html"):
+            for number, line in enumerate(path.read_text().splitlines(), 1):
+                if re.match(r"\s*<(link|meta|script[^>]*\bsrc)\b", line):
+                    self.assertEqual(line.count('"') % 2, 0, f"{path.name}:{number} tem aspas desbalanceadas: {line.strip()}")
+                if "stylesheet" in line:
+                    self.assertRegex(line, link, f"{path.name}:{number}")
 
 
 if __name__ == "__main__":
