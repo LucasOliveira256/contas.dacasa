@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..database import get_db, engine, DATABASE_URL
 from ..models import FinancialTransaction, Income
-from ..services.finance import parse_month, month_start, month_end, category_name
+from ..services.finance import parse_month, month_start, month_end, category_name, payroll_deductions_for_month
 from .common import page
 
 router = APIRouter(tags=["relatórios"])
@@ -42,6 +42,7 @@ def history_page(request: Request, mes: str | None = None, db: Session = Depends
     return page(request, db, "history.html", active_nav="historico", mes=f"{year:04d}-{month:02d}",
                 category_totals=summary(category_totals), person_totals=summary(person_totals), card_totals=summary(card_totals),
                 top_expenses=top_expenses, income_total=sum(i.amount_cents for i in incomes if i.included_in_cashflow),
+                deductions_total=payroll_deductions_for_month(db, year, month),
                 expense_total=sum(t.amount_cents for t in txs))
 
 @router.get("/relatorios")
@@ -67,10 +68,10 @@ def export_csv(inicio: date, fim: date, db: Session = Depends(get_db)):
     kind_names = {"salario": "Salário", "extra": "Renda extra", "plano_saude": "Plano de saúde (desconto em folha)", "inss": "INSS (desconto em folha)", "ir": "IR (desconto em folha)", "vale": "Vale (desconto em folha)",
                   "outros_desconto": "Outros (desconto em folha)"}
     for income in incomes:
-        writer.writerow(["receita" if income.included_in_cashflow else "desconto_informativo", income.happened_on.isoformat(), income.happened_on.isoformat(),
+        writer.writerow(["receita" if income.included_in_cashflow else "desconto_em_folha", income.happened_on.isoformat(), income.happened_on.isoformat(),
                          f"{kind_names.get(income.kind, income.kind)} — {income.description}", income.amount_cents,
                          f"{income.amount_cents // 100},{income.amount_cents % 100:02d}", "", income.person.name, "", "",
-                         "incluído_no_fluxo" if income.included_in_cashflow else "informativo", ""])
+                         "incluído_no_fluxo" if income.included_in_cashflow else "abatido_do_saldo", ""])
     content = "\ufeff" + output.getvalue()
     filename = f"financeiro_{inicio.isoformat()}_{fim.isoformat()}.csv"
     return StreamingResponse(iter([content.encode("utf-8")]), media_type="text/csv; charset=utf-8",

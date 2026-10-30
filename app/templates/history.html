@@ -3,7 +3,7 @@
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">CONSULTA HISTÓRICA</p><h1>Resumo do mês</h1><p class="muted">Os relatórios por categoria seguem a data da compra, não a data de vencimento do cartão.</p></div></section>
 <form class="filter-bar" method="get"><label for="mes">Mês/ano</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button button-light">Consultar</button></form>
-<section class="metric-grid metric-grid-two"><article class="metric metric-good"><span>Receitas no fluxo</span><strong>{{ income_total|brl }}</strong></article><article class="metric"><span>Gastos realizados por data de compra</span><strong>{{ expense_total|brl }}</strong></article></section>
+<section class="metric-grid metric-grid-three"><article class="metric metric-good"><span>Receitas no fluxo</span><strong>{{ income_total|brl }}</strong></article><article class="metric"><span>Descontos em folha</span><strong>{{ deductions_total|brl }}</strong></article><article class="metric"><span>Gastos realizados por data de compra</span><strong>{{ expense_total|brl }}</strong></article></section>
 <div class="summary-grid">
 <section class="panel"><h2>Por categoria</h2><div class="simple-list">{% for item in category_totals %}<div><span>{{ item.name }}</span><b>{{ item.amount|brl }}</b></div>{% else %}<p class="muted">Sem dados.</p>{% endfor %}</div></section>
 <section class="panel"><h2>Por pessoa</h2><div class="simple-list">{% for item in person_totals %}<div><span>{{ item.name }}</span><b>{{ item.amount|brl }}</b></div>{% else %}<p class="muted">Sem dados.</p>{% endfor %}</div></section>

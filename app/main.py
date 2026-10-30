@@ -7,7 +7,7 @@ import os
 from .database import Base, engine, SessionLocal, migrate_database
 from . import models  # registra os mapeamentos antes do create_all
 from .seed import seed_database
-from .services.recurring import ensure_fixed_transactions
+from .services.recurring import ensure_fixed_transactions, ensure_recurring_incomes
 from .routers import dashboard, transactions, registrations, incomes, cards, budgets, reports, savings, auth
 from .auth_middleware import AuthSecurityMiddleware
 from .security import session_secret
@@ -20,6 +20,7 @@ async def lifespan(app: FastAPI):
     try:
         seed_database(db)
         ensure_fixed_transactions(db)
+        ensure_recurring_incomes(db)
     finally:
         db.close()
     yield

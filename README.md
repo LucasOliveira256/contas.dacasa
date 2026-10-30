@@ -8,6 +8,8 @@ Aplicação web para controlar receitas, despesas, cartões, orçamento e poupan
 - Menu lateral expansível por hover no desktop e recolhível no celular; tema Dark e Material Light.
 - Cartões visuais com cores por emissor e exibição opcional dos quatro últimos dígitos (o número completo não é armazenado).
 - Receitas, despesas fixas/variáveis/planejadas e parcelamento no crédito.
+- Receitas e descontos em folha (INSS, IR, plano de saúde, vale) com repetição mensal até um mês escolhido ou sem data final; edição e exclusão só do mês, do mês em diante ou da série toda. Os descontos são abatidos do saldo previsto.
+- Cartão de crédito editável (limite, fechamento e vencimento): ao mudar fechamento ou vencimento, a fatura de todas as compras do cartão é recalculada.
 - Cartões de crédito, débito e Vale Alimentação.
 - Pessoas, categorias, contas, orçamentos e relatórios.
 - Poupança por pessoa, com depósitos, retiradas e juros.
@@ -55,6 +57,10 @@ docker compose logs -f familia-financas
 - No MikroTik, encaminhe as portas públicas HTTPS somente para o proxy reverso; não crie DST-NAT público para a porta `8080`.
 - `docker compose down` preserva os dados. **Não use `docker compose down -v`**, pois isso remove o volume.
 - O SQLite não é criptografado em repouso: restrinja o acesso ao host e proteja backups. Para risco de acesso físico ao disco, use criptografia de disco/volume no sistema operacional. Mantenha backups em local seguro.
+
+## Atualização de bancos existentes
+
+A migração é automática ao iniciar: a tabela `recurring_incomes` e as colunas `recurring_income_id` e `occurrence_month` em `incomes` são criadas sem alterar os lançamentos já existentes. Descontos antigos que também foram lançados como gasto passam a ser subtraídos duas vezes; use `python scripts/listar_descontos_duplicados.py copia.db` (somente leitura) para listá-los e cancele-os em Transações. Faça backup em `/backup.db` antes de editar fechamento ou vencimento de um cartão.
 
 ## Comandos úteis
 

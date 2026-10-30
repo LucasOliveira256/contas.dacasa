@@ -1,9 +1,17 @@
 import calendar
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from ..models import CreditCard, Category, FinancialTransaction, Income
+
+
+# Tipos de receita lançados como desconto em folha (included_in_cashflow=False).
+PAYROLL_DEDUCTION_KINDS = ("plano_saude", "inss", "ir", "vale", "outros_desconto")
+
+
+def is_payroll_deduction(kind: str) -> bool:
+    return kind in PAYROLL_DEDUCTION_KINDS
 
 
 def parse_brl_to_cents(value: str | int | None) -> int:
@@ -109,3 +117,30 @@ def active_transactions_for_month(db: Session, year: int, month: int, by_cashflo
     return list(db.scalars(select(FinancialTransaction).where(
         column >= start, column <= end, FinancialTransaction.status != "cancelado"
     ).order_by(column.desc(), FinancialTransaction.id.desc())).all())
+
+
+def payroll_deductions_for_month(db: Session, year: int, month: int) -> int:
+    """Soma dos descontos em folha do mês (receitas fora do fluxo de caixa), em centavos."""
+    total = db.scalar(select(func.coalesce(func.sum(Income.amount_cents), 0)).where(
+        Income.happened_on >= month_start(year, month),
+        Income.happened_on <= month_end(year, month),
+        Income.included_in_cashflow.is_(False),
+    ))
+    return int(total or 0)
+
+
+def recalculate_card_cashflow(db: Session, card: CreditCard) -> int:
+    """Recalcula cashflow_date de todas as compras do cartão de crédito conforme fechamento/vencimento atuais.
+
+    Parcelas seguem a mesma regra de routers/transactions.py::create_transaction. Não faz commit.
+    """
+    if card.kind != "credito":
+        return 0
+    changed = 0
+    for item in db.scalars(select(FinancialTransaction).where(FinancialTransaction.card_id == card.id)).all():
+        due = invoice_due_date(card, item.purchase_date)
+        new_date = add_months(due, item.installment_number - 1, due.day) if item.installment_number else due
+        if item.cashflow_date != new_date:
+            item.cashflow_date = new_date
+            changed += 1
+    return changed

@@ -574,11 +574,12 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 /* Dashboard resumido com fluxo de caixa em linhas. */
 .dashboard-head { margin-bottom: 20px; }
 .dashboard-head .month-form { flex: 0 0 auto; }
-.dashboard-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 17px; }
+.dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 17px; }
 .dashboard-metrics .metric { position: relative; overflow: hidden; padding: 17px 18px 15px; }
 .dashboard-metrics .metric::after { content: ""; position: absolute; right: -22px; top: -30px; width: 100px; height: 100px; border-radius: 50%; background: currentColor; opacity: .035; pointer-events: none; }
 .metric-income { color: var(--chart-income); }
 .metric-expense { color: var(--chart-expense); }
+.metric-deduction { color: var(--amber); }
 .metric-balance { color: var(--chart-accent); }
 .metric-label-row { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
 .metric-symbol { display: inline-grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border-radius: 10px; background: color-mix(in srgb, currentColor 12%, var(--surface)); color: inherit; }
@@ -630,17 +631,17 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 .bank-card-generic { background: linear-gradient(135deg, #4958d6 0%, #242b68 55%, #151933 100%); }
 .bank-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .bank-card-issuer { font-size: 17px; line-height: 1.15; font-weight: 800; letter-spacing: -.55px; }
-.bank-card-kind { padding: 4px 6px; border: 1px solid rgba(255,255,255,.27); border-radius: 6px; background: rgba(255,255,255,.11); font-size: 7px; font-weight: 800; letter-spacing: .07em; text-align: center; }
+.bank-card-kind { padding: 4px 6px; border: 1px solid rgba(255,255,255,.27); border-radius: 6px; background: rgba(255,255,255,.11); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-align: center; }
 .bank-card-chip { display: grid; grid-template-columns: repeat(2, 10px); grid-template-rows: repeat(2, 9px); width: 23px; height: 20px; overflow: hidden; border: 1px solid rgba(255,255,255,.52); border-radius: 5px; background: linear-gradient(135deg, #f4df9b, #b99e5c); }
 .bank-card-chip span { border: .5px solid rgba(74, 61, 34, .36); }
-.bank-card-number { margin-top: 4px; color: rgba(255,255,255,.92); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: clamp(11px, 1.08vw, 14px); letter-spacing: .045em; white-space: nowrap; }
+.bank-card-number { margin-top: 4px; color: rgba(255,255,255,.92); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: clamp(14px, 1.3vw, 17px); letter-spacing: .045em; white-space: nowrap; }
 .bank-card-number strong { color: #fff; font-weight: 800; }
 .bank-card-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; min-width: 0; }
 .bank-card-foot > div { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
-.bank-card-foot small { color: rgba(255,255,255,.65); font-size: 6px; font-weight: 800; letter-spacing: .14em; }
-.bank-card-foot strong { display: block; max-width: 155px; overflow: hidden; color: #fff; font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.bank-card-foot small { color: rgba(255,255,255,.65); font-size: 9px; font-weight: 800; letter-spacing: .14em; }
+.bank-card-foot strong { display: block; max-width: 190px; overflow: hidden; color: #fff; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .bank-card-label { text-align: right; }
-.bank-card-label strong { max-width: 120px; }
+.bank-card-label strong { max-width: 150px; }
 .invoice-section { min-width: 0; }
 .invoice-section .section-heading { margin-bottom: 13px; }
 .invoice-filter { display: flex; align-items: center; gap: 10px; }
@@ -657,8 +658,8 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 .registration-card-visual { min-width: 0; }
 .registration-card-visual .bank-card { min-height: 145px; padding: 12px; border-radius: 12px; }
 .registration-card-visual .bank-card-issuer { font-size: 14px; }
-.registration-card-visual .bank-card-kind { font-size: 6px; }
-.registration-card-visual .bank-card-number { font-size: 10px; }
+.registration-card-visual .bank-card-kind { font-size: 9px; }
+.registration-card-visual .bank-card-number { font-size: clamp(10px, 1vw, 13px); letter-spacing: .02em; }
 .registration-card-edit { display: grid; gap: 13px; min-width: 0; }
 .registration-card-edit > div strong { display: block; color: var(--ink); font-size: 11px; }
 .registration-card-edit > div small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; line-height: 1.5; }
@@ -679,6 +680,7 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 @media (max-width: 1180px) {
   .bank-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-grid:not(.dashboard-metrics) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .content-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
@@ -778,7 +780,7 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
   .registration-card-entry { grid-template-columns: minmax(0, 1fr); }
   .registration-card-visual .bank-card { min-height: 185px; padding: 15px 17px; }
   .registration-card-visual .bank-card-issuer { font-size: 17px; }
-  .registration-card-visual .bank-card-number { font-size: 13px; }
+  .registration-card-visual .bank-card-number { font-size: clamp(12px, 4.4vw, 16px); }
   .registration-card-edit { padding: 2px 4px 4px; }
   .last-four-form { align-items: flex-end; }
   .auth-user-form .form-grid { grid-template-columns: minmax(0, 1fr); }
@@ -1005,3 +1007,13 @@ tbody tr:hover { background: color-mix(in srgb, var(--green) 5%, transparent); }
   .cashflow-heading { align-items: flex-start; }
   .chart-period { padding: 6px 9px; font-size: 10px; }
 }
+
+/* Receitas: três métricas, ações por linha e seletor de escopo da exclusão. */
+.metric-grid-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.row-actions form { display: flex; align-items: center; gap: 6px; margin: 0; }
+.scope-select { width: auto; max-width: 150px; padding: 5px 8px; font-size: 11px; }
+
+/* Cadastro de cartões: edição de dígitos, limite, fechamento e vencimento. */
+.card-edit-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; }
+.card-edit-form .button { grid-column: 1 / -1; justify-self: start; }

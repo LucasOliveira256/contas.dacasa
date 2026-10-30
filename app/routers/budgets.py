@@ -57,15 +57,17 @@ def delete_budget(budget_id: int, db: Session = Depends(get_db)):
 
 @router.get("/projecao")
 def projection(request: Request, db: Session = Depends(get_db)):
-    from ..services.recurring import ensure_fixed_transactions
-    from ..services.finance import add_months, month_key, incomes_for_month, active_transactions_for_month
+    from ..services.recurring import ensure_fixed_transactions, ensure_recurring_incomes
+    from ..services.finance import add_months, month_key, incomes_for_month, active_transactions_for_month, payroll_deductions_for_month
     today = date.today()
     ensure_fixed_transactions(db, today)
+    ensure_recurring_incomes(db, today)
     months = []
     for offset in range(12):
         current = add_months(today.replace(day=1), offset, 1)
         income = sum(i.amount_cents for i in incomes_for_month(db, current.year, current.month) if i.included_in_cashflow)
         expenses = sum(t.amount_cents for t in active_transactions_for_month(db, current.year, current.month, True))
+        deductions = payroll_deductions_for_month(db, current.year, current.month)
         months.append({"key": month_key(current), "name": current.strftime("%m/%Y"), "income": income,
-                       "expenses": expenses, "balance": income-expenses})
+                       "deductions": deductions, "expenses": expenses, "balance": income-deductions-expenses})
     return page(request, db, "projection.html", active_nav="projecao", months=months)
