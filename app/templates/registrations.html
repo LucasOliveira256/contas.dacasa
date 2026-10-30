@@ -45,11 +45,23 @@
     <label class="field">Conta usada para pagar a fatura (opcional)<select name="payment_account_id"><option value="">Não definida</option>{% for a in all_accounts if a.active %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></label>
     <button class="button button-small" type="submit">Adicionar cartão</button>
   </form>
-  <div class="registration-card-list">{% for c in all_cards %}<div class="registration-card-entry"><div class="registration-card-visual">{% set card = c %}{% include "partials/bank_card.html" %}</div><div class="registration-card-edit"><div><strong>{{ c.name }}</strong><small>{{ c.owner.name }} · {% if c.kind == 'credito' %}Crédito · fecha dia {{ c.closing_day }} · vence dia {{ c.due_day }}{% elif c.kind == 'vale_alimentacao' %}Vale Alimentação · débito{% else %}Débito{% endif %}</small></div><form method="post" action="/cadastros/cartoes/{{ c.id }}/editar" class="last-four-form"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><label class="field">4 últimos dígitos<input name="last_four_digits" value="{{ c.last_four_digits }}" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" placeholder="1234"></label><button class="button button-small" type="submit">Salvar</button></form></div></div>{% else %}<p class="muted">Nenhum cartão cadastrado.</p>{% endfor %}</div>
+  <div class="registration-card-list">{% for c in all_cards %}<div class="registration-card-entry"><div class="registration-card-visual">{% set card = c %}{% include "partials/bank_card.html" %}</div><div class="registration-card-edit"><div><strong>{{ c.name }}</strong><small>{{ c.owner.name }} · {% if c.kind == 'credito' %}Crédito · fecha dia {{ c.closing_day }} · vence dia {{ c.due_day }}{% elif c.kind == 'vale_alimentacao' %}Vale Alimentação · débito{% else %}Débito{% endif %}</small></div><form method="post" action="/cadastros/cartoes/{{ c.id }}/editar" class="card-edit-form" data-credit="{{ 'sim' if c.kind == 'credito' else 'nao' }}" data-closing="{{ c.closing_day }}" data-due="{{ c.due_day }}" onsubmit="return confirmCardCycleChange(this)"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label class="field">4 últimos dígitos<input name="last_four_digits" value="{{ c.last_four_digits }}" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" placeholder="1234"></label>
+      <label class="field">{% if c.kind == 'credito' %}Limite (R$){% else %}Limite / valor de referência (R$){% endif %}<input name="limit" value="{{ '%d,%02d'|format(c.limit_cents // 100, c.limit_cents % 100) }}" inputmode="decimal" required></label>
+      {% if c.kind == 'credito' %}<label class="field">Fecha dia<input type="number" name="closing_day" min="1" max="31" value="{{ c.closing_day }}" required></label><label class="field">Vence dia<input type="number" name="due_day" min="1" max="31" value="{{ c.due_day }}" required></label>{% endif %}
+      <button class="button button-small" type="submit">Salvar</button>
+    </form></div></div>{% else %}<p class="muted">Nenhum cartão cadastrado.</p>{% endfor %}</div>
   <p class="muted compact-copy">Débito e Vale Alimentação não pedem fechamento ou vencimento; as compras entram no fluxo de caixa na data da compra.</p>
 </section>
 </div>
 <script>
+function confirmCardCycleChange(form) {
+  if (form.dataset.credit !== 'sim') return true;
+  const closing = form.elements.closing_day, due = form.elements.due_day;
+  if (!closing || !due) return true;
+  if (closing.value === form.dataset.closing && due.value === form.dataset.due) return true;
+  return confirm('Alterar fechamento ou vencimento recalcula a fatura de TODAS as compras deste cartão, inclusive meses passados. Continuar?');
+}
 document.addEventListener('DOMContentLoaded', function () {
   const kind = document.getElementById('registration-card-kind');
   const cycle = document.getElementById('card-cycle-fields');

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Editar lançamento · Contas da Casa{% endblock %}
+{% block content %}
+<section class="page-head"><div><p class="eyebrow">ENTRADAS E DESCONTOS</p><h1>Editar lançamento</h1><p class="muted">{% if series %}Este lançamento faz parte de uma repetição mensal. Escolha se a alteração vale só para este mês ou também para os próximos.{% else %}Corrija os dados deste lançamento.{% endif %}</p></div><a class="button button-light" href="/receitas?mes={{ mes }}">Voltar</a></section>
+<form class="panel form-panel" method="post" action="/receitas/{{ income.id }}/editar"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><div class="form-grid">
+<label class="field">Data<input type="date" name="happened_on" value="{{ income.happened_on.isoformat() }}" required></label>
+<label class="field">Pessoa<select name="person_id" required>{% if income.person_id not in people|map(attribute='id')|list %}<option value="{{ income.person_id }}" selected>{{ income.person.name }}</option>{% endif %}{% for p in people if p.name != 'Família' or p.id == income.person_id %}<option value="{{ p.id }}" {% if p.id == income.person_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+<label class="field">Tipo<select name="kind" required>{% for key, label in kinds.items() %}<option value="{{ key }}" {% if key == income.kind %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label class="field">Valor (R$)<input name="amount" inputmode="decimal" value="{{ '%d,%02d'|format(income.amount_cents // 100, income.amount_cents % 100) }}" required></label>
+<label class="field field-wide">Descrição (opcional)<input name="description" value="{{ income.description }}"></label>
+{% if series %}
+<label class="field">Aplicar a<select name="scope" id="income-edit-scope"><option value="este">Só este mês</option><option value="proximos">Este e os próximos meses</option></select><small>“Este e os próximos” reescreve os meses seguintes, inclusive os que foram editados individualmente.</small></label>
+<label class="field" id="income-edit-end-mode-field" hidden>Término da repetição<select name="end_mode" id="income-edit-end-mode"><option value="manter">Manter ({% if series.end_month %}até {{ '%02d/%d'|format(series.end_month.month, series.end_month.year) }}{% else %}sem data final{% endif %})</option><option value="ate">Até o mês escolhido</option><option value="sem_fim">Sem data final</option></select></label>
+<label class="field" id="income-edit-until-field" hidden>Repetir até<input type="month" name="until" id="income-edit-until"></label>
+{% endif %}
+</div><div class="form-actions"><button class="button" type="submit">Salvar alterações</button></div></form>
+{% if series %}<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const scope = document.getElementById('income-edit-scope');
+  const modeField = document.getElementById('income-edit-end-mode-field');
+  const mode = document.getElementById('income-edit-end-mode');
+  const untilField = document.getElementById('income-edit-until-field');
+  const until = document.getElementById('income-edit-until');
+  function refresh() {
+    const next = scope.value === 'proximos';
+    modeField.hidden = !next;
+    mode.disabled = !next;
+    const needsMonth = next && mode.value === 'ate';
+    untilField.hidden = !needsMonth;
+    until.disabled = !needsMonth;
+    until.required = needsMonth;
+  }
+  scope.addEventListener('change', refresh); mode.addEventListener('change', refresh); refresh();
+});
+</script>{% endif %}
+{% endblock %}

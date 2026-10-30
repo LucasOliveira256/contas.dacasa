@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
@@ -59,6 +59,27 @@ class CreditCard(Base):
     owner: Mapped[Person] = relationship()
     payment_account: Mapped[Account | None] = relationship()
 
+class RecurringIncome(Base):
+    """Série mensal de salário, renda extra ou desconto em folha.
+
+    As linhas de Income são geradas por services/recurring.py::ensure_recurring_incomes.
+    end_month vazio significa série sem data final.
+    """
+    __tablename__ = "recurring_incomes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(String(240), default="", nullable=False)
+    day_of_month: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_month: Mapped[date | None] = mapped_column(Date)  # primeiro dia do último mês da série
+    generated_until: Mapped[date | None] = mapped_column(Date)  # primeiro dia do último mês já processado
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    person: Mapped[Person] = relationship()
+    __table_args__ = (CheckConstraint("amount_cents >= 0", name="ck_recurring_income_nonnegative"),)
+
+
 class Income(Base):
     __tablename__ = "incomes"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -68,8 +89,14 @@ class Income(Base):
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     description: Mapped[str] = mapped_column(String(240), default="", nullable=False)
     included_in_cashflow: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    recurring_income_id: Mapped[int | None] = mapped_column(ForeignKey("recurring_incomes.id", ondelete="SET NULL"))
+    occurrence_month: Mapped[date | None] = mapped_column(Date)
     person: Mapped[Person] = relationship()
-    __table_args__ = (CheckConstraint("amount_cents >= 0", name="ck_income_nonnegative"),)
+    recurring: Mapped[RecurringIncome | None] = relationship()
+    __table_args__ = (
+        CheckConstraint("amount_cents >= 0", name="ck_income_nonnegative"),
+        Index("uq_income_recurring_occurrence", "recurring_income_id", "occurrence_month", unique=True),
+    )
 
 class FixedExpense(Base):
     __tablename__ = "fixed_expenses"

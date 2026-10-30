@@ -84,6 +84,8 @@ Aplicação web para controlar receitas, despesas, cartões, orçamento e poupan
 - Menu lateral expansível por hover no desktop e recolhível no celular; tema Dark e Material Light.
 - Cartões visuais com cores por emissor e exibição opcional dos quatro últimos dígitos (o número completo não é armazenado).
 - Receitas, despesas fixas/variáveis/planejadas e parcelamento no crédito.
+- Receitas e descontos em folha (INSS, IR, plano de saúde, vale) com repetição mensal até um mês escolhido ou sem data final; edição e exclusão só do mês, do mês em diante ou da série toda. Os descontos são abatidos do saldo previsto.
+- Cartão de crédito editável (limite, fechamento e vencimento): ao mudar fechamento ou vencimento, a fatura de todas as compras do cartão é recalculada.
 - Cartões de crédito, débito e Vale Alimentação.
 - Pessoas, categorias, contas, orçamentos e relatórios.
 - Poupança por pessoa, com depósitos, retiradas e juros.
@@ -131,6 +133,10 @@ docker compose logs -f familia-financas
 - No MikroTik, encaminhe as portas públicas HTTPS somente para o proxy reverso; não crie DST-NAT público para a porta `8080`.
 - `docker compose down` preserva os dados. **Não use `docker compose down -v`**, pois isso remove o volume.
 - O SQLite não é criptografado em repouso: restrinja o acesso ao host e proteja backups. Para risco de acesso físico ao disco, use criptografia de disco/volume no sistema operacional. Mantenha backups em local seguro.
+
+## Atualização de bancos existentes
+
+A migração é automática ao iniciar: a tabela `recurring_incomes` e as colunas `recurring_income_id` e `occurrence_month` em `incomes` são criadas sem alterar os lançamentos já existentes. Descontos antigos que também foram lançados como gasto passam a ser subtraídos duas vezes; use `python scripts/listar_descontos_duplicados.py copia.db` (somente leitura) para listá-los e cancele-os em Transações. Faça backup em `/backup.db` antes de editar fechamento ou vencimento de um cartão.
 
 ## Comandos úteis
 
@@ -387,6 +393,15 @@ def migrate_database() -> None:
                 connection.execute(text("ALTER TABLE credit_cards ADD COLUMN kind VARCHAR(30) NOT NULL DEFAULT 'credito'"))
             if "last_four_digits" not in columns:
                 connection.execute(text("ALTER TABLE credit_cards ADD COLUMN last_four_digits VARCHAR(4) NOT NULL DEFAULT ''"))
+    # Receitas recorrentes: colunas nulas, então linhas antigas continuam avulsas.
+    if "incomes" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("incomes")}
+        with engine.begin() as connection:
+            if "recurring_income_id" not in columns:
+                connection.execute(text("ALTER TABLE incomes ADD COLUMN recurring_income_id INTEGER REFERENCES recurring_incomes(id) ON DELETE SET NULL"))
+            if "occurrence_month" not in columns:
+                connection.execute(text("ALTER TABLE incomes ADD COLUMN occurrence_month DATE"))
+            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_income_recurring_occurrence ON incomes (recurring_income_id, occurrence_month)"))
     # Permite invalidar sessões antigas ao trocar a senha.
     if "users" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("users")}
@@ -411,7 +426,7 @@ import os
 from .database import Base, engine, SessionLocal, migrate_database
 from . import models  # registra os mapeamentos antes do create_all
 from .seed import seed_database
-from .services.recurring import ensure_fixed_transactions
+from .services.recurring import ensure_fixed_transactions, ensure_recurring_incomes
 from .routers import dashboard, transactions, registrations, incomes, cards, budgets, reports, savings, auth
 from .auth_middleware import AuthSecurityMiddleware
 from .security import session_secret
@@ -424,6 +439,7 @@ async def lifespan(app: FastAPI):
     try:
         seed_database(db)
         ensure_fixed_transactions(db)
+        ensure_recurring_incomes(db)
     finally:
         db.close()
     yield
@@ -461,7 +477,7 @@ def healthz():
 
 ```python
 from datetime import date, datetime
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
@@ -521,6 +537,27 @@ class CreditCard(Base):
     owner: Mapped[Person] = relationship()
     payment_account: Mapped[Account | None] = relationship()
 
+class RecurringIncome(Base):
+    """Série mensal de salário, renda extra ou desconto em folha.
+
+    As linhas de Income são geradas por services/recurring.py::ensure_recurring_incomes.
+    end_month vazio significa série sem data final.
+    """
+    __tablename__ = "recurring_incomes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(String(240), default="", nullable=False)
+    day_of_month: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_month: Mapped[date | None] = mapped_column(Date)  # primeiro dia do último mês da série
+    generated_until: Mapped[date | None] = mapped_column(Date)  # primeiro dia do último mês já processado
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    person: Mapped[Person] = relationship()
+    __table_args__ = (CheckConstraint("amount_cents >= 0", name="ck_recurring_income_nonnegative"),)
+
+
 class Income(Base):
     __tablename__ = "incomes"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -530,8 +567,14 @@ class Income(Base):
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     description: Mapped[str] = mapped_column(String(240), default="", nullable=False)
     included_in_cashflow: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    recurring_income_id: Mapped[int | None] = mapped_column(ForeignKey("recurring_incomes.id", ondelete="SET NULL"))
+    occurrence_month: Mapped[date | None] = mapped_column(Date)
     person: Mapped[Person] = relationship()
-    __table_args__ = (CheckConstraint("amount_cents >= 0", name="ck_income_nonnegative"),)
+    recurring: Mapped[RecurringIncome | None] = relationship()
+    __table_args__ = (
+        CheckConstraint("amount_cents >= 0", name="ck_income_nonnegative"),
+        Index("uq_income_recurring_occurrence", "recurring_income_id", "occurrence_month", unique=True),
+    )
 
 class FixedExpense(Base):
     __tablename__ = "fixed_expenses"
@@ -898,17 +941,19 @@ def delete_budget(budget_id: int, db: Session = Depends(get_db)):
 
 @router.get("/projecao")
 def projection(request: Request, db: Session = Depends(get_db)):
-    from ..services.recurring import ensure_fixed_transactions
-    from ..services.finance import add_months, month_key, incomes_for_month, active_transactions_for_month
+    from ..services.recurring import ensure_fixed_transactions, ensure_recurring_incomes
+    from ..services.finance import add_months, month_key, incomes_for_month, active_transactions_for_month, payroll_deductions_for_month
     today = date.today()
     ensure_fixed_transactions(db, today)
+    ensure_recurring_incomes(db, today)
     months = []
     for offset in range(12):
         current = add_months(today.replace(day=1), offset, 1)
         income = sum(i.amount_cents for i in incomes_for_month(db, current.year, current.month) if i.included_in_cashflow)
         expenses = sum(t.amount_cents for t in active_transactions_for_month(db, current.year, current.month, True))
+        deductions = payroll_deductions_for_month(db, current.year, current.month)
         months.append({"key": month_key(current), "name": current.strftime("%m/%Y"), "income": income,
-                       "expenses": expenses, "balance": income-expenses})
+                       "deductions": deductions, "expenses": expenses, "balance": income-deductions-expenses})
     return page(request, db, "projection.html", active_nav="projecao", months=months)
 
 ```
@@ -998,8 +1043,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Income, FinancialTransaction, Budget, Category, CreditCard
-from ..services.finance import active_transactions_for_month, incomes_for_month, month_start, month_end, add_months, parse_month, month_key, category_name
-from ..services.recurring import ensure_fixed_transactions
+from ..services.finance import active_transactions_for_month, incomes_for_month, payroll_deductions_for_month, month_start, month_end, add_months, parse_month, month_key, category_name
+from ..services.recurring import ensure_fixed_transactions, ensure_recurring_incomes
 from .common import page
 from ..services.local_time import local_now, local_today, greeting_for_hour
 
@@ -1013,12 +1058,16 @@ def dashboard(request: Request, mes: str | None = None, db: Session = Depends(ge
     year, month = parse_month(mes, today)
     selected = month_start(year, month)
     ensure_fixed_transactions(db, today)
+    ensure_recurring_incomes(db, today)
     incomes = incomes_for_month(db, year, month)
     cash_incomes = [i for i in incomes if i.included_in_cashflow]
+    deduction_incomes = [i for i in incomes if not i.included_in_cashflow]
     transactions = active_transactions_for_month(db, year, month, by_cashflow=True)
     income_total = sum(i.amount_cents for i in cash_incomes)
     expense_total = sum(t.amount_cents for t in transactions)
+    deductions_total = payroll_deductions_for_month(db, year, month)
     previous_date = add_months(selected, -1, 1)
+    prev_deductions = payroll_deductions_for_month(db, previous_date.year, previous_date.month)
     prev_income = sum(i.amount_cents for i in incomes_for_month(db, previous_date.year, previous_date.month) if i.included_in_cashflow)
     prev_expense = sum(t.amount_cents for t in active_transactions_for_month(db, previous_date.year, previous_date.month, True))
     actual_purchase = list(db.scalars(select(FinancialTransaction).where(
@@ -1052,10 +1101,12 @@ def dashboard(request: Request, mes: str | None = None, db: Session = Depends(ge
         label = f"{current.month:02d}/{str(current.year)[2:]}"
         monthly_income = sum(i.amount_cents for i in incomes_for_month(db, current.year, current.month) if i.included_in_cashflow)
         monthly_expense = sum(t.amount_cents for t in active_transactions_for_month(db, current.year, current.month, True))
+        monthly_deductions = payroll_deductions_for_month(db, current.year, current.month)
         labels.append(label)
         incomes_data.append(monthly_income)
-        expenses_data.append(monthly_expense)
-        running_balance += monthly_income - monthly_expense
+        # As barras de saída incluem os descontos em folha para reconciliar com a linha de saldo.
+        expenses_data.append(monthly_expense + monthly_deductions)
+        running_balance += monthly_income - monthly_deductions - monthly_expense
         balance_data.append(running_balance)
     pie_totals = defaultdict(int)
     for transaction in actual_purchase:
@@ -1097,8 +1148,9 @@ def dashboard(request: Request, mes: str | None = None, db: Session = Depends(ge
         "cards": {"labels": card_labels, "datasets": card_datasets},
     }
     return page(request, db, "dashboard.html", active_nav="dashboard", mes=month_key(selected), year=year, month=month,
-                income_total=income_total, expense_total=expense_total, balance=income_total-expense_total,
-                prev_income=prev_income, prev_expense=prev_expense, prev_balance=prev_income-prev_expense,
+                income_total=income_total, expense_total=expense_total, balance=income_total-deductions_total-expense_total,
+                deductions_total=deductions_total, prev_deductions=prev_deductions, deductions_count=len(deduction_incomes),
+                prev_income=prev_income, prev_expense=prev_expense, prev_balance=prev_income-prev_deductions-prev_expense,
                 income_count=len(cash_incomes), expense_count=len(transactions), budget_total=budget_total,
                 actual_budgeted=actual_budgeted, budget_rows=budget_rows, ranking=ranking, upcoming=upcoming,
                 chart_payload=chart_payload, previous_month=month_key(previous_date), actual_spend=sum(t.amount_cents for t in actual_purchase),
@@ -1124,13 +1176,16 @@ def upcoming_partial(request: Request, db: Session = Depends(get_db)):
 
 ```python
 from datetime import date
+from urllib.parse import quote_plus
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import Income, Person
-from ..services.finance import parse_brl_to_cents, parse_month, month_start, month_end
+from ..models import Income, Person, RecurringIncome
+from ..services.finance import add_months, is_payroll_deduction, parse_brl_to_cents, parse_month, month_start, month_end
+from ..services.local_time import local_today
+from ..services.recurring import ensure_recurring_incomes
 from .common import page
 
 router = APIRouter(prefix="/receitas", tags=["receitas"])
@@ -1139,37 +1194,187 @@ KINDS = {"salario": "Salário", "extra": "Renda extra", "plano_saude": "Plano de
          "inss": "INSS (desconto em folha)", "ir": "IR (desconto em folha)",
          "vale": "Vale (desconto em folha)", "outros_desconto": "Outros (desconto em folha)"}
 
+
+def _month_key(value: date) -> str:
+    return f"{value.year:04d}-{value.month:02d}"
+
+
+def _parse_month_strict(value: str) -> date:
+    """Lê 'AAAA-MM' (campo type=month) e devolve o primeiro dia do mês."""
+    try:
+        year, month = (int(part) for part in value.strip().split("-", 1))
+        return date(year, month, 1)
+    except (ValueError, TypeError, AttributeError):
+        raise ValueError("Informe um mês válido para o fim da repetição.")
+
+
+def _redirect(mes: str | None, erro: str | None = None) -> RedirectResponse:
+    url = "/receitas"
+    params = []
+    if mes:
+        params.append(f"mes={mes}")
+    if erro:
+        params.append(f"erro={quote_plus(erro)}")
+    if params:
+        url += "?" + "&".join(params)
+    return RedirectResponse(url, status_code=303)
+
+
+def _check_overlap(db: Session, person_id: int, kind: str, description: str, start: date, end: date | None,
+                   ignore_id: int | None = None) -> None:
+    """Impede duas séries ativas iguais (mesma pessoa, tipo e descrição) no mesmo período."""
+    candidates = db.scalars(select(RecurringIncome).where(
+        RecurringIncome.active.is_(True), RecurringIncome.person_id == person_id,
+        RecurringIncome.kind == kind, RecurringIncome.description == description)).all()
+    for other in candidates:
+        if ignore_id and other.id == ignore_id:
+            continue
+        other_start = other.start_date.replace(day=1)
+        starts_before_other_ends = other.end_month is None or other.end_month >= start
+        ends_after_other_starts = end is None or end >= other_start
+        if starts_before_other_ends and ends_after_other_starts:
+            raise ValueError("Já existe uma repetição ativa com a mesma pessoa, tipo e descrição neste período. "
+                             "Edite ou encerre a existente antes de criar outra.")
+
+
 @router.get("")
 def incomes_page(request: Request, mes: str | None = None, db: Session = Depends(get_db)):
     year, month = parse_month(mes)
+    ensure_recurring_incomes(db, local_today())
     rows = list(db.scalars(select(Income).where(Income.happened_on >= month_start(year, month),
-                                       Income.happened_on <= month_end(year, month)).order_by(Income.happened_on.desc())).all())
+                                       Income.happened_on <= month_end(year, month)).order_by(Income.happened_on.desc(), Income.id.desc())).all())
     cash_total = sum(r.amount_cents for r in rows if r.included_in_cashflow)
     deductions = sum(r.amount_cents for r in rows if not r.included_in_cashflow)
-    return page(request, db, "incomes.html", active_nav="receitas", rows=rows, mes=f"{year:04d}-{month:02d}",
-                cash_total=cash_total, deductions=deductions, kinds=KINDS)
+    return page(request, db, "incomes.html", active_nav="receitas", rows=rows, mes=_month_key(date(year, month, 1)),
+                cash_total=cash_total, deductions=deductions, net_total=cash_total - deductions, kinds=KINDS)
+
 
 @router.post("")
 def create_income(happened_on: date = Form(...), person_id: int = Form(...), kind: str = Form(...), amount: str = Form(...),
-                  description: str = Form(""), db: Session = Depends(get_db)):
+                  description: str = Form(""), repeat: str = Form("nao"), until: str = Form(""),
+                  db: Session = Depends(get_db)):
+    mes = _month_key(happened_on)
     try:
         if kind not in KINDS or not db.get(Person, person_id):
-            raise ValueError("Seleção inválida")
-        informational = kind in ("plano_saude", "inss", "ir", "vale", "outros_desconto")
-        db.add(Income(person_id=person_id, kind=kind, happened_on=happened_on, amount_cents=parse_brl_to_cents(amount),
-                      description=description.strip(), included_in_cashflow=not informational))
-        db.commit()
-    except ValueError:
+            raise ValueError("Seleção inválida.")
+        cents = parse_brl_to_cents(amount)
+        clean_description = description.strip()
+        if repeat == "nao":
+            db.add(Income(person_id=person_id, kind=kind, happened_on=happened_on, amount_cents=cents,
+                          description=clean_description, included_in_cashflow=not is_payroll_deduction(kind)))
+            db.commit()
+        elif repeat in ("ate", "sem_fim"):
+            start_month = happened_on.replace(day=1)
+            end_month = None
+            if repeat == "ate":
+                end_month = _parse_month_strict(until)
+                if end_month < start_month:
+                    raise ValueError("O mês final não pode ser anterior ao primeiro lançamento.")
+            _check_overlap(db, person_id, kind, clean_description, start_month, end_month)
+            db.add(RecurringIncome(person_id=person_id, kind=kind, amount_cents=cents, description=clean_description,
+                                   day_of_month=happened_on.day, start_date=happened_on, end_month=end_month))
+            db.commit()
+            ensure_recurring_incomes(db, local_today())
+        else:
+            raise ValueError("Opção de repetição inválida.")
+    except ValueError as exc:
         db.rollback()
-    return RedirectResponse(f"/receitas?mes={happened_on.year:04d}-{happened_on.month:02d}", status_code=303)
+        return _redirect(mes, str(exc))
+    return _redirect(mes)
+
+
+@router.get("/{income_id}/editar")
+def edit_income_form(income_id: int, request: Request, db: Session = Depends(get_db)):
+    income = db.get(Income, income_id)
+    if not income:
+        return _redirect(None)
+    return page(request, db, "income_edit.html", active_nav="receitas", income=income, series=income.recurring,
+                kinds=KINDS, mes=_month_key(income.happened_on))
+
+
+@router.post("/{income_id}/editar")
+def update_income(income_id: int, happened_on: date = Form(...), person_id: int = Form(...), kind: str = Form(...),
+                  amount: str = Form(...), description: str = Form(""), scope: str = Form("este"),
+                  end_mode: str = Form("manter"), until: str = Form(""), db: Session = Depends(get_db)):
+    income = db.get(Income, income_id)
+    if not income:
+        return _redirect(None)
+    try:
+        if kind not in KINDS or not db.get(Person, person_id):
+            raise ValueError("Seleção inválida.")
+        cents = parse_brl_to_cents(amount)
+        clean_description = description.strip()
+        deduction = is_payroll_deduction(kind)
+        series = income.recurring
+        if series is None or scope == "este":
+            # Só este lançamento: a série não reescreve meses já gerados.
+            income.person_id, income.kind, income.happened_on = person_id, kind, happened_on
+            income.amount_cents, income.description = cents, clean_description
+            income.included_in_cashflow = not deduction
+        elif scope == "proximos":
+            occurrence = income.occurrence_month
+            new_end = series.end_month
+            if end_mode == "sem_fim":
+                new_end = None
+            elif end_mode == "ate":
+                new_end = _parse_month_strict(until)
+                if new_end < occurrence:
+                    raise ValueError("O mês final não pode ser anterior a este lançamento.")
+            elif end_mode != "manter":
+                raise ValueError("Opção de término inválida.")
+            _check_overlap(db, person_id, kind, clean_description, occurrence, new_end, ignore_id=series.id)
+            series.person_id, series.kind, series.amount_cents = person_id, kind, cents
+            series.description, series.day_of_month, series.end_month = clean_description, happened_on.day, new_end
+            for row in db.scalars(select(Income).where(Income.recurring_income_id == series.id,
+                                                       Income.occurrence_month >= occurrence)).all():
+                if new_end is not None and row.occurrence_month > new_end:
+                    db.delete(row)
+                    continue
+                row.person_id, row.kind, row.amount_cents, row.description = person_id, kind, cents, clean_description
+                row.included_in_cashflow = not deduction
+                row.happened_on = happened_on if row.id == income.id else add_months(row.occurrence_month, 0, happened_on.day)
+            if new_end is not None and series.generated_until and series.generated_until > new_end:
+                series.generated_until = new_end
+        else:
+            raise ValueError("Escolha se a alteração vale só para este mês ou também para os próximos.")
+        db.commit()
+        ensure_recurring_incomes(db, local_today())
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/receitas/{income_id}/editar?erro={quote_plus(str(exc))}", status_code=303)
+    return _redirect(_month_key(happened_on))
+
 
 @router.post("/{income_id}/excluir")
-def delete_income(income_id: int, db: Session = Depends(get_db)):
+def delete_income(income_id: int, scope: str = Form("este"), db: Session = Depends(get_db)):
     income = db.get(Income, income_id)
-    if income:
+    if not income:
+        return _redirect(None)
+    mes = _month_key(income.happened_on)
+    series = income.recurring
+    if series is None or scope == "este":
+        # O generated_until da série impede que o mês excluído seja recriado.
         db.delete(income)
-        db.commit()
-    return RedirectResponse("/receitas", status_code=303)
+    elif scope == "proximos":
+        occurrence = income.occurrence_month
+        for row in db.scalars(select(Income).where(Income.recurring_income_id == series.id,
+                                                   Income.occurrence_month >= occurrence)).all():
+            db.delete(row)
+        previous = add_months(occurrence, -1, 1)
+        first = series.start_date.replace(day=1)
+        series.end_month = previous
+        series.generated_until = previous if previous >= first else None
+        if previous < first:
+            series.active = False
+    elif scope == "serie":
+        for row in db.scalars(select(Income).where(Income.recurring_income_id == series.id)).all():
+            db.delete(row)
+        db.flush()
+        db.delete(series)
+    else:
+        return _redirect(mes, "Escopo de exclusão inválido.")
+    db.commit()
+    return _redirect(mes)
 
 ```
 
@@ -1187,7 +1392,7 @@ from ..models import (
     Person, Category, Account, CreditCard, Income, FixedExpense,
     FinancialTransaction, Budget, SavingsAccount,
 )
-from ..services.finance import parse_brl_to_cents
+from ..services.finance import parse_brl_to_cents, recalculate_card_cashflow
 from .common import page
 
 router = APIRouter(prefix="/cadastros", tags=["cadastros"])
@@ -1346,15 +1551,34 @@ def create_card(
 
 
 @router.post("/cartoes/{card_id}/editar")
-def update_card(card_id: int, last_four_digits: str = Form(""), db: Session = Depends(get_db)):
+def update_card(card_id: int, last_four_digits: str = Form(""), limit: str | None = Form(None),
+                closing_day: int | None = Form(None), due_day: int | None = Form(None), db: Session = Depends(get_db)):
     card = db.get(CreditCard, card_id)
     digits = last_four_digits.strip()
     if not card:
         return RedirectResponse("/cadastros?erro=Cartao+nao+encontrado", status_code=303)
     if digits and (len(digits) != 4 or not digits.isascii() or not digits.isdigit()):
         return RedirectResponse("/cadastros?erro=Informe+zero+ou+quatro+digitos", status_code=303)
-    card.last_four_digits = digits
-    db.commit()
+    try:
+        new_limit = parse_brl_to_cents(limit) if limit is not None else card.limit_cents
+        cycle_changed = False
+        if card.kind == "credito":
+            new_closing = closing_day if closing_day is not None else card.closing_day
+            new_due = due_day if due_day is not None else card.due_day
+            if not 1 <= new_closing <= 31 or not 1 <= new_due <= 31:
+                raise ValueError("Informe dias de fechamento e vencimento entre 1 e 31.")
+            cycle_changed = (new_closing, new_due) != (card.closing_day, card.due_day)
+            card.closing_day, card.due_day = new_closing, new_due
+        # Débito e Vale Alimentação não têm ciclo de fatura: fechamento e vencimento continuam 0.
+        card.last_four_digits = digits
+        card.limit_cents = new_limit
+        if cycle_changed:
+            # cashflow_date é gravado na compra; sem o recálculo, faturas antigas manteriam as datas do cadastro errado.
+            recalculate_card_cashflow(db, card)
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/cadastros?erro={str(exc).replace(' ', '+')}", status_code=303)
     return RedirectResponse("/cadastros?ok=1", status_code=303)
 
 ```
@@ -1376,7 +1600,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..database import get_db, engine, DATABASE_URL
 from ..models import FinancialTransaction, Income
-from ..services.finance import parse_month, month_start, month_end, category_name
+from ..services.finance import parse_month, month_start, month_end, category_name, payroll_deductions_for_month
 from .common import page
 
 router = APIRouter(tags=["relatórios"])
@@ -1407,6 +1631,7 @@ def history_page(request: Request, mes: str | None = None, db: Session = Depends
     return page(request, db, "history.html", active_nav="historico", mes=f"{year:04d}-{month:02d}",
                 category_totals=summary(category_totals), person_totals=summary(person_totals), card_totals=summary(card_totals),
                 top_expenses=top_expenses, income_total=sum(i.amount_cents for i in incomes if i.included_in_cashflow),
+                deductions_total=payroll_deductions_for_month(db, year, month),
                 expense_total=sum(t.amount_cents for t in txs))
 
 @router.get("/relatorios")
@@ -1432,10 +1657,10 @@ def export_csv(inicio: date, fim: date, db: Session = Depends(get_db)):
     kind_names = {"salario": "Salário", "extra": "Renda extra", "plano_saude": "Plano de saúde (desconto em folha)", "inss": "INSS (desconto em folha)", "ir": "IR (desconto em folha)", "vale": "Vale (desconto em folha)",
                   "outros_desconto": "Outros (desconto em folha)"}
     for income in incomes:
-        writer.writerow(["receita" if income.included_in_cashflow else "desconto_informativo", income.happened_on.isoformat(), income.happened_on.isoformat(),
+        writer.writerow(["receita" if income.included_in_cashflow else "desconto_em_folha", income.happened_on.isoformat(), income.happened_on.isoformat(),
                          f"{kind_names.get(income.kind, income.kind)} — {income.description}", income.amount_cents,
                          f"{income.amount_cents // 100},{income.amount_cents % 100:02d}", "", income.person.name, "", "",
-                         "incluído_no_fluxo" if income.included_in_cashflow else "informativo", ""])
+                         "incluído_no_fluxo" if income.included_in_cashflow else "abatido_do_saldo", ""])
     content = "\ufeff" + output.getvalue()
     filename = f"financeiro_{inicio.isoformat()}_{fim.isoformat()}.csv"
     return StreamingResponse(iter([content.encode("utf-8")]), media_type="text/csv; charset=utf-8",
@@ -1967,9 +2192,17 @@ def seed_database(db: Session) -> None:
 import calendar
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from ..models import CreditCard, Category, FinancialTransaction, Income
+
+
+# Tipos de receita lançados como desconto em folha (included_in_cashflow=False).
+PAYROLL_DEDUCTION_KINDS = ("plano_saude", "inss", "ir", "vale", "outros_desconto")
+
+
+def is_payroll_deduction(kind: str) -> bool:
+    return kind in PAYROLL_DEDUCTION_KINDS
 
 
 def parse_brl_to_cents(value: str | int | None) -> int:
@@ -2076,6 +2309,33 @@ def active_transactions_for_month(db: Session, year: int, month: int, by_cashflo
         column >= start, column <= end, FinancialTransaction.status != "cancelado"
     ).order_by(column.desc(), FinancialTransaction.id.desc())).all())
 
+
+def payroll_deductions_for_month(db: Session, year: int, month: int) -> int:
+    """Soma dos descontos em folha do mês (receitas fora do fluxo de caixa), em centavos."""
+    total = db.scalar(select(func.coalesce(func.sum(Income.amount_cents), 0)).where(
+        Income.happened_on >= month_start(year, month),
+        Income.happened_on <= month_end(year, month),
+        Income.included_in_cashflow.is_(False),
+    ))
+    return int(total or 0)
+
+
+def recalculate_card_cashflow(db: Session, card: CreditCard) -> int:
+    """Recalcula cashflow_date de todas as compras do cartão de crédito conforme fechamento/vencimento atuais.
+
+    Parcelas seguem a mesma regra de routers/transactions.py::create_transaction. Não faz commit.
+    """
+    if card.kind != "credito":
+        return 0
+    changed = 0
+    for item in db.scalars(select(FinancialTransaction).where(FinancialTransaction.card_id == card.id)).all():
+        due = invoice_due_date(card, item.purchase_date)
+        new_date = add_months(due, item.installment_number - 1, due.day) if item.installment_number else due
+        if item.cashflow_date != new_date:
+            item.cashflow_date = new_date
+            changed += 1
+    return changed
+
 ```
 
 
@@ -2114,8 +2374,8 @@ def greeting_for_hour(hour: int) -> str:
 from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from ..models import FixedExpense, FinancialTransaction
-from .finance import add_months, cashflow_date_for, month_start
+from ..models import FixedExpense, FinancialTransaction, Income, RecurringIncome
+from .finance import add_months, cashflow_date_for, is_payroll_deduction, month_start
 
 
 def ensure_fixed_transactions(db: Session, today: date | None = None, months_ahead: int = 12) -> int:
@@ -2153,6 +2413,39 @@ def ensure_fixed_transactions(db: Session, today: date | None = None, months_ahe
                 created += 1
             occurrence = add_months(occurrence, 1, 1)
     if created:
+        db.commit()
+    return created
+
+
+def ensure_recurring_incomes(db: Session, today: date | None = None, months_ahead: int = 12) -> int:
+    """Gera as receitas/descontos recorrentes que faltam até o horizonte.
+
+    generated_until registra o último mês processado de cada série, então um lançamento
+    excluído individualmente não é recriado. Idempotente.
+    """
+    today = today or date.today()
+    horizon = add_months(today, months_ahead).replace(day=1)
+    created, touched = 0, False
+    for series in db.scalars(select(RecurringIncome).where(RecurringIncome.active.is_(True))).all():
+        cursor = add_months(series.generated_until, 1, 1) if series.generated_until else series.start_date.replace(day=1)
+        last = min(horizon, series.end_month) if series.end_month else horizon
+        if cursor > last:
+            continue
+        while cursor <= last:
+            exists = db.scalar(select(Income.id).where(
+                Income.recurring_income_id == series.id, Income.occurrence_month == cursor))
+            if not exists:
+                db.add(Income(
+                    person_id=series.person_id, kind=series.kind, happened_on=add_months(cursor, 0, series.day_of_month),
+                    amount_cents=series.amount_cents, description=series.description,
+                    included_in_cashflow=not is_payroll_deduction(series.kind),
+                    recurring_income_id=series.id, occurrence_month=cursor,
+                ))
+                created += 1
+            cursor = add_months(cursor, 1, 1)
+        series.generated_until = last
+        touched = True
+    if touched:
         db.commit()
     return created
 
@@ -2760,11 +3053,12 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 /* Dashboard resumido com fluxo de caixa em linhas. */
 .dashboard-head { margin-bottom: 20px; }
 .dashboard-head .month-form { flex: 0 0 auto; }
-.dashboard-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 17px; }
+.dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 17px; }
 .dashboard-metrics .metric { position: relative; overflow: hidden; padding: 17px 18px 15px; }
 .dashboard-metrics .metric::after { content: ""; position: absolute; right: -22px; top: -30px; width: 100px; height: 100px; border-radius: 50%; background: currentColor; opacity: .035; pointer-events: none; }
 .metric-income { color: var(--chart-income); }
 .metric-expense { color: var(--chart-expense); }
+.metric-deduction { color: var(--amber); }
 .metric-balance { color: var(--chart-accent); }
 .metric-label-row { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
 .metric-symbol { display: inline-grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border-radius: 10px; background: color-mix(in srgb, currentColor 12%, var(--surface)); color: inherit; }
@@ -2816,17 +3110,17 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 .bank-card-generic { background: linear-gradient(135deg, #4958d6 0%, #242b68 55%, #151933 100%); }
 .bank-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .bank-card-issuer { font-size: 17px; line-height: 1.15; font-weight: 800; letter-spacing: -.55px; }
-.bank-card-kind { padding: 4px 6px; border: 1px solid rgba(255,255,255,.27); border-radius: 6px; background: rgba(255,255,255,.11); font-size: 7px; font-weight: 800; letter-spacing: .07em; text-align: center; }
+.bank-card-kind { padding: 4px 6px; border: 1px solid rgba(255,255,255,.27); border-radius: 6px; background: rgba(255,255,255,.11); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-align: center; }
 .bank-card-chip { display: grid; grid-template-columns: repeat(2, 10px); grid-template-rows: repeat(2, 9px); width: 23px; height: 20px; overflow: hidden; border: 1px solid rgba(255,255,255,.52); border-radius: 5px; background: linear-gradient(135deg, #f4df9b, #b99e5c); }
 .bank-card-chip span { border: .5px solid rgba(74, 61, 34, .36); }
-.bank-card-number { margin-top: 4px; color: rgba(255,255,255,.92); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: clamp(11px, 1.08vw, 14px); letter-spacing: .045em; white-space: nowrap; }
+.bank-card-number { margin-top: 4px; color: rgba(255,255,255,.92); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: clamp(14px, 1.3vw, 17px); letter-spacing: .045em; white-space: nowrap; }
 .bank-card-number strong { color: #fff; font-weight: 800; }
 .bank-card-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; min-width: 0; }
 .bank-card-foot > div { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
-.bank-card-foot small { color: rgba(255,255,255,.65); font-size: 6px; font-weight: 800; letter-spacing: .14em; }
-.bank-card-foot strong { display: block; max-width: 155px; overflow: hidden; color: #fff; font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.bank-card-foot small { color: rgba(255,255,255,.65); font-size: 9px; font-weight: 800; letter-spacing: .14em; }
+.bank-card-foot strong { display: block; max-width: 190px; overflow: hidden; color: #fff; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .bank-card-label { text-align: right; }
-.bank-card-label strong { max-width: 120px; }
+.bank-card-label strong { max-width: 150px; }
 .invoice-section { min-width: 0; }
 .invoice-section .section-heading { margin-bottom: 13px; }
 .invoice-filter { display: flex; align-items: center; gap: 10px; }
@@ -2843,8 +3137,8 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 .registration-card-visual { min-width: 0; }
 .registration-card-visual .bank-card { min-height: 145px; padding: 12px; border-radius: 12px; }
 .registration-card-visual .bank-card-issuer { font-size: 14px; }
-.registration-card-visual .bank-card-kind { font-size: 6px; }
-.registration-card-visual .bank-card-number { font-size: 10px; }
+.registration-card-visual .bank-card-kind { font-size: 9px; }
+.registration-card-visual .bank-card-number { font-size: clamp(10px, 1vw, 13px); letter-spacing: .02em; }
 .registration-card-edit { display: grid; gap: 13px; min-width: 0; }
 .registration-card-edit > div strong { display: block; color: var(--ink); font-size: 11px; }
 .registration-card-edit > div small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; line-height: 1.5; }
@@ -2865,6 +3159,7 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
 @media (max-width: 1180px) {
   .bank-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-grid:not(.dashboard-metrics) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .content-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
@@ -2964,7 +3259,7 @@ tfoot th { color: var(--ink); font-size: 11px; text-transform: none; }
   .registration-card-entry { grid-template-columns: minmax(0, 1fr); }
   .registration-card-visual .bank-card { min-height: 185px; padding: 15px 17px; }
   .registration-card-visual .bank-card-issuer { font-size: 17px; }
-  .registration-card-visual .bank-card-number { font-size: 13px; }
+  .registration-card-visual .bank-card-number { font-size: clamp(12px, 4.4vw, 16px); }
   .registration-card-edit { padding: 2px 4px 4px; }
   .last-four-form { align-items: flex-end; }
   .auth-user-form .form-grid { grid-template-columns: minmax(0, 1fr); }
@@ -3191,6 +3486,16 @@ tbody tr:hover { background: color-mix(in srgb, var(--green) 5%, transparent); }
   .cashflow-heading { align-items: flex-start; }
   .chart-period { padding: 6px 9px; font-size: 10px; }
 }
+
+/* Receitas: três métricas, ações por linha e seletor de escopo da exclusão. */
+.metric-grid-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.row-actions form { display: flex; align-items: center; gap: 6px; margin: 0; }
+.scope-select { width: auto; max-width: 150px; padding: 5px 8px; font-size: 11px; }
+
+/* Cadastro de cartões: edição de dígitos, limite, fechamento e vencimento. */
+.card-edit-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; }
+.card-edit-form .button { grid-column: 1 / -1; justify-self: start; }
 
 ```
 
@@ -3625,8 +3930,9 @@ tbody tr:hover { background: color-mix(in srgb, var(--green) 5%, transparent); }
 </section>
 <section class="metric-grid dashboard-metrics">
   <article class="metric metric-income"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/><path d="M4 21h16"/></svg></span><span class="metric-label">Entradas no mês</span></div><strong>{{ income_total|brl }}</strong><small><span class="metric-dot"></span>{{ income_count }} lançamento(s) no fluxo de caixa</small><div class="metric-comparison {% if income_total >= prev_income %}up{% else %}down{% endif %}">{% if income_total >= prev_income %}↑{% else %}↓{% endif %} {{ ((income_total-prev_income)*100//prev_income if prev_income else (100 if income_total else 0))|abs }}% <span>vs. mês anterior</span></div></article>
+  <article class="metric metric-deduction"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M8 12h8"/></svg></span><span class="metric-label">Descontos</span></div><strong>{{ deductions_total|brl }}</strong><small><span class="metric-dot"></span>{{ deductions_count }} desconto(s) em folha abatidos do saldo</small><div class="metric-comparison {% if deductions_total <= prev_deductions %}up{% else %}down{% endif %}">{% if deductions_total <= prev_deductions %}↓{% else %}↑{% endif %} {{ ((deductions_total-prev_deductions)*100//prev_deductions if prev_deductions else (100 if deductions_total else 0))|abs }}% <span>vs. mês anterior</span></div></article>
   <article class="metric metric-expense"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><path d="M12 5v14m6-6-6 6-6-6"/><path d="M4 3h16"/></svg></span><span class="metric-label">Saídas no mês</span></div><strong>{{ expense_total|brl }}</strong><small><span class="metric-dot"></span>{{ expense_count }} compromisso(s), cartão pelo vencimento</small><div class="metric-comparison {% if expense_total <= prev_expense %}up{% else %}down{% endif %}">{% if expense_total <= prev_expense %}↓{% else %}↑{% endif %} {{ ((expense_total-prev_expense)*100//prev_expense if prev_expense else (100 if expense_total else 0))|abs }}% <span>vs. mês anterior</span></div></article>
-  <article class="metric {% if balance < 0 %}metric-danger{% else %}metric-balance{% endif %}"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18m-13 5h4"/></svg></span><span class="metric-label">Saldo previsto</span></div><strong>{{ balance|brl }}</strong><small><span class="metric-dot"></span>Entradas menos compromissos do mês</small><div class="metric-comparison {% if balance >= prev_balance %}up{% else %}down{% endif %}">{% if balance >= prev_balance %}↑{% else %}↓{% endif %} {{ ((balance-prev_balance)*100//(prev_balance if prev_balance else 1))|abs }}% <span>vs. saldo anterior</span></div></article>
+  <article class="metric {% if balance < 0 %}metric-danger{% else %}metric-balance{% endif %}"><div class="metric-label-row"><span class="metric-symbol"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18m-13 5h4"/></svg></span><span class="metric-label">Saldo previsto</span></div><strong>{{ balance|brl }}</strong><small><span class="metric-dot"></span>Entradas menos descontos e compromissos do mês</small><div class="metric-comparison {% if balance >= prev_balance %}up{% else %}down{% endif %}">{% if balance >= prev_balance %}↑{% else %}↓{% endif %} {{ ((balance-prev_balance)*100//(prev_balance if prev_balance else 1))|abs }}% <span>vs. saldo anterior</span></div></article>
 </section>
 <section class="panel cashflow-panel">
   <div class="panel-heading cashflow-heading"><div><p class="eyebrow">FLUXO DE CAIXA</p><h2>Entradas x saídas</h2><p class="muted">Comparativo mensal dos últimos 12 meses · valores em reais</p></div><span class="chart-period"><span class="chart-status-dot"></span>12 meses</span></div>
@@ -3689,7 +3995,7 @@ tbody tr:hover { background: color-mix(in srgb, var(--green) 5%, transparent); }
 {% block content %}
 <section class="page-head"><div><p class="eyebrow">CONSULTA HISTÓRICA</p><h1>Resumo do mês</h1><p class="muted">Os relatórios por categoria seguem a data da compra, não a data de vencimento do cartão.</p></div></section>
 <form class="filter-bar" method="get"><label for="mes">Mês/ano</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button button-light">Consultar</button></form>
-<section class="metric-grid metric-grid-two"><article class="metric metric-good"><span>Receitas no fluxo</span><strong>{{ income_total|brl }}</strong></article><article class="metric"><span>Gastos realizados por data de compra</span><strong>{{ expense_total|brl }}</strong></article></section>
+<section class="metric-grid metric-grid-three"><article class="metric metric-good"><span>Receitas no fluxo</span><strong>{{ income_total|brl }}</strong></article><article class="metric"><span>Descontos em folha</span><strong>{{ deductions_total|brl }}</strong></article><article class="metric"><span>Gastos realizados por data de compra</span><strong>{{ expense_total|brl }}</strong></article></section>
 <div class="summary-grid">
 <section class="panel"><h2>Por categoria</h2><div class="simple-list">{% for item in category_totals %}<div><span>{{ item.name }}</span><b>{{ item.amount|brl }}</b></div>{% else %}<p class="muted">Sem dados.</p>{% endfor %}</div></section>
 <section class="panel"><h2>Por pessoa</h2><div class="simple-list">{% for item in person_totals %}<div><span>{{ item.name }}</span><b>{{ item.amount|brl }}</b></div>{% else %}<p class="muted">Sem dados.</p>{% endfor %}</div></section>
@@ -3701,22 +4007,87 @@ tbody tr:hover { background: color-mix(in srgb, var(--green) 5%, transparent); }
 ```
 
 
+## `app/templates/income_edit.html`
+
+```html
+{% extends "base.html" %}
+{% block title %}Editar lançamento · Contas da Casa{% endblock %}
+{% block content %}
+<section class="page-head"><div><p class="eyebrow">ENTRADAS E DESCONTOS</p><h1>Editar lançamento</h1><p class="muted">{% if series %}Este lançamento faz parte de uma repetição mensal. Escolha se a alteração vale só para este mês ou também para os próximos.{% else %}Corrija os dados deste lançamento.{% endif %}</p></div><a class="button button-light" href="/receitas?mes={{ mes }}">Voltar</a></section>
+<form class="panel form-panel" method="post" action="/receitas/{{ income.id }}/editar"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><div class="form-grid">
+<label class="field">Data<input type="date" name="happened_on" value="{{ income.happened_on.isoformat() }}" required></label>
+<label class="field">Pessoa<select name="person_id" required>{% if income.person_id not in people|map(attribute='id')|list %}<option value="{{ income.person_id }}" selected>{{ income.person.name }}</option>{% endif %}{% for p in people if p.name != 'Família' or p.id == income.person_id %}<option value="{{ p.id }}" {% if p.id == income.person_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+<label class="field">Tipo<select name="kind" required>{% for key, label in kinds.items() %}<option value="{{ key }}" {% if key == income.kind %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label class="field">Valor (R$)<input name="amount" inputmode="decimal" value="{{ '%d,%02d'|format(income.amount_cents // 100, income.amount_cents % 100) }}" required></label>
+<label class="field field-wide">Descrição (opcional)<input name="description" value="{{ income.description }}"></label>
+{% if series %}
+<label class="field">Aplicar a<select name="scope" id="income-edit-scope"><option value="este">Só este mês</option><option value="proximos">Este e os próximos meses</option></select><small>“Este e os próximos” reescreve os meses seguintes, inclusive os que foram editados individualmente.</small></label>
+<label class="field" id="income-edit-end-mode-field" hidden>Término da repetição<select name="end_mode" id="income-edit-end-mode"><option value="manter">Manter ({% if series.end_month %}até {{ '%02d/%d'|format(series.end_month.month, series.end_month.year) }}{% else %}sem data final{% endif %})</option><option value="ate">Até o mês escolhido</option><option value="sem_fim">Sem data final</option></select></label>
+<label class="field" id="income-edit-until-field" hidden>Repetir até<input type="month" name="until" id="income-edit-until"></label>
+{% endif %}
+</div><div class="form-actions"><button class="button" type="submit">Salvar alterações</button></div></form>
+{% if series %}<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const scope = document.getElementById('income-edit-scope');
+  const modeField = document.getElementById('income-edit-end-mode-field');
+  const mode = document.getElementById('income-edit-end-mode');
+  const untilField = document.getElementById('income-edit-until-field');
+  const until = document.getElementById('income-edit-until');
+  function refresh() {
+    const next = scope.value === 'proximos';
+    modeField.hidden = !next;
+    mode.disabled = !next;
+    const needsMonth = next && mode.value === 'ate';
+    untilField.hidden = !needsMonth;
+    until.disabled = !needsMonth;
+    until.required = needsMonth;
+  }
+  scope.addEventListener('change', refresh); mode.addEventListener('change', refresh); refresh();
+});
+</script>{% endif %}
+{% endblock %}
+
+```
+
+
 ## `app/templates/incomes.html`
 
 ```html
 {% extends "base.html" %}
 {% block title %}Receitas · Contas da Casa{% endblock %}
 {% block content %}
-<section class="page-head"><div><p class="eyebrow">ENTRADAS E DESCONTOS</p><h1>Receitas</h1><p class="muted">Plano de saúde, INSS e IR em folha são informativos e não entram novamente nas despesas.</p></div></section>
-<section class="metric-grid metric-grid-two"><article class="metric metric-good"><span>Receitas incluídas no caixa</span><strong>{{ cash_total|brl }}</strong><small>Salários e rendas extras lançados no mês</small></article><article class="metric"><span>Descontos em folha informativos</span><strong>{{ deductions|brl }}</strong><small>Não duplicados como despesa</small></article></section>
+<section class="page-head"><div><p class="eyebrow">ENTRADAS E DESCONTOS</p><h1>Receitas</h1><p class="muted">Os descontos em folha (plano de saúde, INSS, IR, vale e outros) são abatidos do saldo previsto do mês. Salários e descontos podem se repetir todo mês.</p></div></section>
+<section class="metric-grid metric-grid-three"><article class="metric metric-good"><span>Receitas no caixa</span><strong>{{ cash_total|brl }}</strong><small>Salários e rendas extras lançados no mês</small></article><article class="metric"><span>Descontos em folha</span><strong>{{ deductions|brl }}</strong><small>Abatidos do saldo previsto</small></article><article class="metric"><span>Líquido do mês</span><strong>{{ net_total|brl }}</strong><small>Receitas menos descontos, antes dos gastos</small></article></section>
 <form class="filter-bar" method="get"><label for="mes">Mês</label><input id="mes" type="month" name="mes" value="{{ mes }}"><button class="button button-light" type="submit">Filtrar</button></form>
 <form class="panel form-panel" method="post" action="/receitas"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><h2>Adicionar receita ou desconto</h2><div class="form-grid">
 <label class="field">Data<input type="date" name="happened_on" value="{{ today.isoformat() }}" required></label><label class="field">Pessoa<select name="person_id" required>{% for p in people if p.name != 'Família' %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
-<label class="field">Tipo<select name="kind" required><option value="salario">Salário</option><option value="extra">Renda extra</option><optgroup label="Desconto em folha"><option value="plano_saude">Plano de saúde</option><option value="inss">INSS</option><option value="ir">IR</option><option value="vale">Vale</option><option value="outros_desconto">Outros</option></optgroup><option value="vale">Vale descontado em folha</option><option value="outros_desconto">Outros descontos em folha</option></select></label>
-<label class="field">Valor (R$)<input name="amount" inputmode="decimal" placeholder="0,00" required></label><label class="field field-wide">Descrição (opcional)<input name="description" placeholder="Ex.: salário de outubro, freela de fim de semana"></label>
+<label class="field">Tipo<select name="kind" required><option value="salario">Salário</option><option value="extra">Renda extra</option><optgroup label="Desconto em folha"><option value="plano_saude">Plano de saúde</option><option value="inss">INSS</option><option value="ir">IR</option><option value="vale">Vale</option><option value="outros_desconto">Outros</option></optgroup></select></label>
+<label class="field">Valor (R$)<input name="amount" inputmode="decimal" placeholder="0,00" required></label>
+<label class="field">Repetir<select name="repeat" id="income-repeat"><option value="nao">Não repetir</option><option value="ate">Todo mês, até o mês escolhido</option><option value="sem_fim">Todo mês, sem data final</option></select></label>
+<label class="field" id="income-until-field" hidden>Repetir até<input type="month" name="until" id="income-until"></label>
+<label class="field field-wide">Descrição (opcional)<input name="description" placeholder="Ex.: salário de outubro, freela de fim de semana"></label>
 </div><div class="form-actions"><button class="button" type="submit">Salvar lançamento</button></div></form>
 <section class="section-heading"><div><h2>Lançamentos de {{ mes[5:7] }}/{{ mes[:4] }}</h2></div></section>
-<div class="panel"><div class="table-wrap"><table><thead><tr><th>Data</th><th>Pessoa</th><th>Tipo / descrição</th><th>Tratamento</th><th>Valor</th><th></th></tr></thead><tbody>{% for item in rows %}<tr><td>{{ item.happened_on|date_br }}</td><td>{{ item.person.name }}</td><td>{{ kinds[item.kind] }}<small class="subline">{{ item.description }}</small></td><td>{% if item.included_in_cashflow %}<span class="status status-realizado">No fluxo</span>{% else %}<span class="status status-previsto">Informativo</span>{% endif %}</td><td class="money">{{ item.amount_cents|brl }}</td><td><form method="post" action="/receitas/{{ item.id }}/excluir" onsubmit="return confirm('Excluir este lançamento?')"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><button class="text-button danger-text" type="submit">Excluir</button></form></td></tr>{% else %}<tr><td class="empty-cell" colspan="6">Nenhum lançamento neste mês.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Data</th><th>Pessoa</th><th>Tipo / descrição</th><th>Tratamento</th><th>Valor</th><th></th></tr></thead><tbody>{% for item in rows %}<tr><td>{{ item.happened_on|date_br }}</td><td>{{ item.person.name }}</td><td>{{ kinds[item.kind] }}<small class="subline">{{ item.description }}</small>{% if item.recurring %}<small class="subline">Repete todo mês {% if item.recurring.end_month %}até {{ '%02d/%d'|format(item.recurring.end_month.month, item.recurring.end_month.year) }}{% else %}sem data final{% endif %}</small>{% endif %}</td><td>{% if item.included_in_cashflow %}<span class="status status-realizado">Receita</span>{% else %}<span class="status status-previsto">Desconto</span>{% endif %}</td><td class="money">{{ item.amount_cents|brl }}</td><td><div class="row-actions"><a class="text-link" href="/receitas/{{ item.id }}/editar">Editar</a><form method="post" action="/receitas/{{ item.id }}/excluir" onsubmit="return confirmIncomeDelete(this)"><input type="hidden" name="_csrf" value="{{ csrf_token }}">{% if item.recurring %}<select class="scope-select" name="scope" aria-label="O que excluir"><option value="este">Só este mês</option><option value="proximos">Este e os próximos</option><option value="serie">Toda a série</option></select>{% endif %}<button class="text-button danger-text" type="submit">Excluir</button></form></div></td></tr>{% else %}<tr><td class="empty-cell" colspan="6">Nenhum lançamento neste mês.</td></tr>{% endfor %}</tbody></table></div></div>
+<script>
+function confirmIncomeDelete(form) {
+  const scope = form.elements.scope;
+  if (!scope) return confirm('Excluir este lançamento?');
+  return confirm('Excluir: ' + scope.options[scope.selectedIndex].text.toLowerCase() + '?');
+}
+document.addEventListener('DOMContentLoaded', function () {
+  const repeat = document.getElementById('income-repeat');
+  const untilField = document.getElementById('income-until-field');
+  const until = document.getElementById('income-until');
+  function toggleUntil() {
+    const needsMonth = repeat.value === 'ate';
+    untilField.hidden = !needsMonth;
+    until.required = needsMonth;
+    until.disabled = !needsMonth;
+  }
+  if (repeat && untilField && until) { repeat.addEventListener('change', toggleUntil); toggleUntil(); }
+});
+</script>
 {% endblock %}
 
 ```
@@ -3811,9 +4182,9 @@ tbody tr:hover { background: color-mix(in srgb, var(--green) 5%, transparent); }
 {% extends "base.html" %}
 {% block title %}Projeção · Contas da Casa{% endblock %}
 {% block content %}
-<section class="page-head"><div><p class="eyebrow">PLANEJAMENTO</p><h1>Projeção de 12 meses</h1><p class="muted">Inclui gastos previstos/realizados conforme o vencimento de caixa. Receitas futuras precisam ser cadastradas com a respectiva data.</p></div><a class="button" href="/transacoes/nova?tipo=previsto">+ Planejar gasto</a></section>
-<div class="panel"><div class="table-wrap"><table><thead><tr><th>Mês</th><th>Receitas cadastradas</th><th>Despesas/compromissos</th><th>Saldo previsto</th></tr></thead><tbody>{% for row in months %}<tr><td><b>{{ row.name }}</b></td><td>{{ row.income|brl }}</td><td>{{ row.expenses|brl }}</td><td class="money {% if row.balance < 0 %}danger-text{% else %}good-text{% endif %}">{{ row.balance|brl }}</td></tr>{% endfor %}</tbody></table></div></div>
-<div class="notice info">A projeção não presume um salário futuro automaticamente: cadastre entradas com a data esperada para que apareçam no mês correspondente. Despesas fixas ativas são geradas automaticamente.</div>
+<section class="page-head"><div><p class="eyebrow">PLANEJAMENTO</p><h1>Projeção de 12 meses</h1><p class="muted">Inclui gastos previstos/realizados conforme o vencimento de caixa. Receitas e descontos recorrentes são gerados até 12 meses à frente; lançamentos avulsos precisam da data esperada.</p></div><a class="button" href="/transacoes/nova?tipo=previsto">+ Planejar gasto</a></section>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Mês</th><th>Receitas cadastradas</th><th>Descontos em folha</th><th>Despesas/compromissos</th><th>Saldo previsto</th></tr></thead><tbody>{% for row in months %}<tr><td><b>{{ row.name }}</b></td><td>{{ row.income|brl }}</td><td>{{ row.deductions|brl }}</td><td>{{ row.expenses|brl }}</td><td class="money {% if row.balance < 0 %}danger-text{% else %}good-text{% endif %}">{{ row.balance|brl }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="notice info">Salários e descontos só aparecem nos meses em que foram lançados, avulsos ou com repetição. Despesas fixas ativas também são geradas automaticamente. O saldo previsto é receitas menos descontos em folha menos despesas.</div>
 {% endblock %}
 
 ```
@@ -3869,11 +4240,23 @@ tbody tr:hover { background: color-mix(in srgb, var(--green) 5%, transparent); }
     <label class="field">Conta usada para pagar a fatura (opcional)<select name="payment_account_id"><option value="">Não definida</option>{% for a in all_accounts if a.active %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></label>
     <button class="button button-small" type="submit">Adicionar cartão</button>
   </form>
-  <div class="registration-card-list">{% for c in all_cards %}<div class="registration-card-entry"><div class="registration-card-visual">{% set card = c %}{% include "partials/bank_card.html" %}</div><div class="registration-card-edit"><div><strong>{{ c.name }}</strong><small>{{ c.owner.name }} · {% if c.kind == 'credito' %}Crédito · fecha dia {{ c.closing_day }} · vence dia {{ c.due_day }}{% elif c.kind == 'vale_alimentacao' %}Vale Alimentação · débito{% else %}Débito{% endif %}</small></div><form method="post" action="/cadastros/cartoes/{{ c.id }}/editar" class="last-four-form"><input type="hidden" name="_csrf" value="{{ csrf_token }}"><label class="field">4 últimos dígitos<input name="last_four_digits" value="{{ c.last_four_digits }}" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" placeholder="1234"></label><button class="button button-small" type="submit">Salvar</button></form></div></div>{% else %}<p class="muted">Nenhum cartão cadastrado.</p>{% endfor %}</div>
+  <div class="registration-card-list">{% for c in all_cards %}<div class="registration-card-entry"><div class="registration-card-visual">{% set card = c %}{% include "partials/bank_card.html" %}</div><div class="registration-card-edit"><div><strong>{{ c.name }}</strong><small>{{ c.owner.name }} · {% if c.kind == 'credito' %}Crédito · fecha dia {{ c.closing_day }} · vence dia {{ c.due_day }}{% elif c.kind == 'vale_alimentacao' %}Vale Alimentação · débito{% else %}Débito{% endif %}</small></div><form method="post" action="/cadastros/cartoes/{{ c.id }}/editar" class="card-edit-form" data-credit="{{ 'sim' if c.kind == 'credito' else 'nao' }}" data-closing="{{ c.closing_day }}" data-due="{{ c.due_day }}" onsubmit="return confirmCardCycleChange(this)"><input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label class="field">4 últimos dígitos<input name="last_four_digits" value="{{ c.last_four_digits }}" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" placeholder="1234"></label>
+      <label class="field">{% if c.kind == 'credito' %}Limite (R$){% else %}Limite / valor de referência (R$){% endif %}<input name="limit" value="{{ '%d,%02d'|format(c.limit_cents // 100, c.limit_cents % 100) }}" inputmode="decimal" required></label>
+      {% if c.kind == 'credito' %}<label class="field">Fecha dia<input type="number" name="closing_day" min="1" max="31" value="{{ c.closing_day }}" required></label><label class="field">Vence dia<input type="number" name="due_day" min="1" max="31" value="{{ c.due_day }}" required></label>{% endif %}
+      <button class="button button-small" type="submit">Salvar</button>
+    </form></div></div>{% else %}<p class="muted">Nenhum cartão cadastrado.</p>{% endfor %}</div>
   <p class="muted compact-copy">Débito e Vale Alimentação não pedem fechamento ou vencimento; as compras entram no fluxo de caixa na data da compra.</p>
 </section>
 </div>
 <script>
+function confirmCardCycleChange(form) {
+  if (form.dataset.credit !== 'sim') return true;
+  const closing = form.elements.closing_day, due = form.elements.due_day;
+  if (!closing || !due) return true;
+  if (closing.value === form.dataset.closing && due.value === form.dataset.due) return true;
+  return confirm('Alterar fechamento ou vencimento recalcula a fatura de TODAS as compras deste cartão, inclusive meses passados. Continuar?');
+}
 document.addEventListener('DOMContentLoaded', function () {
   const kind = document.getElementById('registration-card-kind');
   const cycle = document.getElementById('card-cycle-fields');
@@ -4076,6 +4459,70 @@ document.addEventListener('DOMContentLoaded', function () {
 ```
 
 
+## `scripts/listar_descontos_duplicados.py`
+
+```python
+#!/usr/bin/env python3
+"""Lista, SEM ALTERAR NADA, gastos que provavelmente duplicam descontos em folha.
+
+Desde que os descontos passaram a abater o saldo, um desconto (INSS, IR, plano de saúde, vale)
+que também foi lançado como gasto em /transacoes é subtraído duas vezes.
+
+Uso (sempre numa CÓPIA do banco; o arquivo é aberto somente para leitura):
+    python scripts/listar_descontos_duplicados.py caminho/para/copia.db
+
+Revise a lista e cancele cada gasto duplicado em /transacoes (botão Cancelar). Gastos cancelados
+saem dos cálculos e o histórico é preservado.
+"""
+import re
+import sqlite3
+import sys
+from collections import defaultdict
+
+KEYWORDS = re.compile(r"\b(inss|irrf?|imposto de renda|plano de sa[uú]de|conv[eê]nio|unimed|vale)\b", re.I)
+
+
+def main(path: str) -> None:
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    db.row_factory = sqlite3.Row
+    deductions = db.execute(
+        "SELECT happened_on, kind, amount_cents FROM incomes WHERE included_in_cashflow = 0").fetchall()
+    amounts_by_month = defaultdict(set)
+    for row in deductions:
+        amounts_by_month[row["happened_on"][:7]].add(row["amount_cents"])
+    rows = db.execute("""
+        SELECT t.id, t.purchase_date, t.cashflow_date, t.description, t.amount_cents, t.status,
+               c.name AS category, p.name AS category_parent
+        FROM transactions t
+        JOIN categories c ON c.id = t.category_id
+        LEFT JOIN categories p ON p.id = c.parent_id
+        WHERE t.status != 'cancelado'
+        ORDER BY t.cashflow_date, t.id""").fetchall()
+    found = 0
+    for row in rows:
+        reasons = []
+        if "(informativo)" in (row["category"] or "").lower():
+            reasons.append("categoria marcada como informativa")
+        if KEYWORDS.search(row["description"] or "") or KEYWORDS.search(row["category"] or ""):
+            reasons.append("descrição/categoria cita desconto em folha")
+        if row["amount_cents"] in amounts_by_month.get(row["cashflow_date"][:7], set()):
+            reasons.append("mesmo valor de um desconto do mês")
+        if reasons:
+            found += 1
+            print(f"#{row['id']:<5} {row['cashflow_date']}  R$ {row['amount_cents'] / 100:>10,.2f}  "
+                  f"{row['status']:<9} {row['category_parent'] + ' > ' if row['category_parent'] else ''}{row['category']} "
+                  f"| {row['description']}\n        motivo: {'; '.join(reasons)}")
+    print(f"\n{found} gasto(s) candidato(s) em {len(rows)} ativos. Nada foi alterado.")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        sys.exit(__doc__)
+    main(sys.argv[1])
+
+```
+
+
 ## `tests/test_auth_flow.py`
 
 ```python
@@ -4261,6 +4708,418 @@ class LocalGreetingTests(unittest.TestCase):
         self.assertEqual(greeting_for_hour(4), "Boa noite")
         self.assertEqual(greeting_for_hour(18), "Boa noite")
         self.assertEqual(greeting_for_hour(23), "Boa noite")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+```
+
+
+## `tests/test_receitas_cartoes.py`
+
+```python
+"""Testes de descontos no saldo, receitas recorrentes, edição de cartões e migração do banco."""
+import os
+import tempfile
+import unittest
+from datetime import date
+from unittest.mock import patch
+
+from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+from starlette.requests import Request
+
+from app import database
+from app.database import Base
+from app.models import Category, CreditCard, FinancialTransaction, Income, Person, RecurringIncome
+from app.routers import incomes as incomes_router
+from app.routers.budgets import projection
+from app.routers.dashboard import dashboard
+from app.routers.registrations import registrations, update_card
+from app.routers.reports import history_page
+from app.routers.transactions import create_transaction
+from app.seed import seed_database
+from app.services.finance import (
+    incomes_for_month, invoice_due_date, payroll_deductions_for_month, recalculate_card_cashflow,
+)
+from app.services.recurring import ensure_recurring_incomes
+
+FIXED_TODAY = date(2026, 10, 29)
+
+
+def fake_request() -> Request:
+    return Request({"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": b"",
+                    "session": {}, "state": {}})
+
+
+class BaseCase(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self.db = Session(self.engine, expire_on_commit=False)
+        seed_database(self.db)
+        self.husband = self.db.scalar(select(Person).where(Person.name == "Marido"))
+        self.category = self.db.scalar(select(Category).where(Category.parent_id.is_(None)))
+        self.today_patch = patch("app.routers.incomes.local_today", return_value=FIXED_TODAY)
+        self.today_patch.start()
+
+    def tearDown(self):
+        self.today_patch.stop()
+        self.db.close()
+        self.engine.dispose()
+
+    def add_income(self, kind, cents, when, deduction=False):
+        self.db.add(Income(person_id=self.husband.id, kind=kind, happened_on=when, amount_cents=cents,
+                           included_in_cashflow=not deduction))
+        self.db.commit()
+
+    def create_series(self, kind="salario", amount="7200,00", start=date(2026, 11, 5), repeat="ate",
+                      until="2027-05", description=""):
+        return incomes_router.create_income(
+            happened_on=start, person_id=self.husband.id, kind=kind, amount=amount, description=description,
+            repeat=repeat, until=until, db=self.db)
+
+    def month_rows(self, series_id):
+        return list(self.db.scalars(select(Income).where(Income.recurring_income_id == series_id)
+                                    .order_by(Income.occurrence_month)).all())
+
+
+class PayrollDeductionsTests(BaseCase):
+    def test_dashboard_balance_subtracts_deductions(self):
+        self.add_income("salario", 720000, date(2026, 10, 5))
+        for kind, cents in (("inss", 100000), ("ir", 120000), ("plano_saude", 80000), ("vale", 120000)):
+            self.add_income(kind, cents, date(2026, 10, 5), deduction=True)
+        context = dashboard(fake_request(), "2026-10", self.db).context
+        self.assertEqual(context["income_total"], 720000)
+        self.assertEqual(context["deductions_total"], 420000)
+        self.assertEqual(context["expense_total"], 0)
+        self.assertEqual(context["balance"], 300000)  # 7200 - 4200 = 3000
+
+    def test_balance_also_subtracts_expenses(self):
+        self.add_income("salario", 720000, date(2026, 10, 5))
+        self.add_income("inss", 420000, date(2026, 10, 5), deduction=True)
+        create_transaction(None, description="Mercado", amount="500,00", purchase_date=date(2026, 10, 10),
+                           category_id=self.category.id, person_id=self.husband.id, account_id="", card_id="",
+                           status="realizado", installments=1, db=self.db)
+        context = dashboard(fake_request(), "2026-10", self.db).context
+        self.assertEqual(context["expense_total"], 50000)
+        self.assertEqual(context["balance"], 250000)  # 7200 - 4200 - 500 = 2500
+
+    def test_previous_month_and_chart_use_deductions(self):
+        self.add_income("salario", 720000, date(2026, 9, 5))
+        self.add_income("inss", 420000, date(2026, 9, 5), deduction=True)
+        context = dashboard(fake_request(), "2026-10", self.db).context
+        self.assertEqual(context["prev_deductions"], 420000)
+        self.assertEqual(context["prev_balance"], 300000)
+        line = context["chart_payload"]["line"]["data"]
+        bars = context["chart_payload"]["bars"]
+        self.assertEqual(line[-2], 300000)  # setembro: saldo acumulado
+        self.assertEqual(bars["expense"][-2], 420000)  # barras de saída incluem os descontos
+
+    def test_projection_and_history_expose_deductions(self):
+        today = date.today()
+        self.add_income("salario", 720000, today.replace(day=1))
+        self.add_income("ir", 420000, today.replace(day=1), deduction=True)
+        first = projection(fake_request(), self.db).context["months"][0]
+        self.assertEqual((first["income"], first["deductions"], first["balance"]), (720000, 420000, 300000))
+        history = history_page(fake_request(), f"{today.year:04d}-{today.month:02d}", self.db).context
+        self.assertEqual(history["deductions_total"], 420000)
+
+    def test_screens_render_new_deductions_card(self):
+        html = dashboard(fake_request(), "2026-10", self.db).body.decode()
+        self.assertIn("Descontos", html)
+        self.assertIn("metric-deduction", html)
+
+
+class RecurringIncomeTests(BaseCase):
+    def test_until_month_creates_one_row_per_month(self):
+        response = self.create_series()
+        self.assertEqual(response.status_code, 303)
+        series = self.db.scalar(select(RecurringIncome))
+        rows = self.month_rows(series.id)
+        self.assertEqual(len(rows), 7)  # nov/2026 a mai/2027
+        self.assertEqual(rows[0].happened_on, date(2026, 11, 5))
+        self.assertEqual(rows[-1].happened_on, date(2027, 5, 5))
+        self.assertTrue(all(r.amount_cents == 720000 and r.included_in_cashflow for r in rows))
+
+    def test_generation_is_idempotent_and_deleted_month_stays_deleted(self):
+        self.create_series()
+        series = self.db.scalar(select(RecurringIncome))
+        self.assertEqual(ensure_recurring_incomes(self.db, FIXED_TODAY), 0)
+        december = next(r for r in self.month_rows(series.id) if r.occurrence_month == date(2026, 12, 1))
+        incomes_router.delete_income(december.id, scope="este", db=self.db)
+        self.assertEqual(ensure_recurring_incomes(self.db, FIXED_TODAY), 0)
+        self.assertEqual(len(self.month_rows(series.id)), 6)
+
+    def test_open_ended_series_fills_12_months_ahead_and_grows_with_time(self):
+        self.create_series(repeat="sem_fim", until="")
+        series = self.db.scalar(select(RecurringIncome))
+        self.assertIsNone(series.end_month)
+        self.assertEqual(len(self.month_rows(series.id)), 12)  # nov/2026 a out/2027
+        created = ensure_recurring_incomes(self.db, date(2026, 12, 15))
+        self.assertEqual(created, 2)  # nov/2027 e dez/2027
+        self.assertEqual(ensure_recurring_incomes(self.db, date(2026, 12, 15)), 0)
+
+    def test_day_31_falls_on_last_day_of_shorter_months(self):
+        self.create_series(start=date(2026, 12, 31), until="2027-03")
+        series = self.db.scalar(select(RecurringIncome))
+        dates = [r.happened_on for r in self.month_rows(series.id)]
+        self.assertEqual(dates, [date(2026, 12, 31), date(2027, 1, 31), date(2027, 2, 28), date(2027, 3, 31)])
+
+    def test_salary_and_deductions_series_leave_3000_each_month(self):
+        self.create_series()
+        for kind, amount in (("inss", "1000,00"), ("ir", "1200,00"), ("plano_saude", "800,00"), ("vale", "1200,00")):
+            self.create_series(kind=kind, amount=amount)
+        for year, month in ((2026, 11), (2027, 2), (2027, 5)):
+            income = sum(i.amount_cents for i in incomes_for_month(self.db, year, month) if i.included_in_cashflow)
+            deductions = payroll_deductions_for_month(self.db, year, month)
+            self.assertEqual(income - deductions, 300000)
+        self.assertEqual(payroll_deductions_for_month(self.db, 2027, 6), 0)
+
+    def test_duplicate_series_is_rejected_but_new_series_after_end_is_allowed(self):
+        self.create_series()
+        response = self.create_series()
+        self.assertIn("erro=", response.headers["location"])
+        self.assertEqual(len(self.db.scalars(select(RecurringIncome)).all()), 1)
+        # Reajuste: relança a partir de junho, depois do fim da série anterior.
+        response = self.create_series(start=date(2027, 6, 5), amount="7600,00", until="2027-12")
+        self.assertNotIn("erro=", response.headers["location"])
+        self.assertEqual(len(self.db.scalars(select(RecurringIncome)).all()), 2)
+
+    def test_invalid_end_month_is_rejected(self):
+        response = self.create_series(until="2026-01")
+        self.assertIn("erro=", response.headers["location"])
+        response = self.create_series(until="")
+        self.assertIn("erro=", response.headers["location"])
+        self.assertEqual(self.db.scalar(select(RecurringIncome.id)), None)
+
+    def test_edit_this_and_next_rewrites_following_months_only(self):
+        self.create_series(repeat="sem_fim", until="")
+        series = self.db.scalar(select(RecurringIncome))
+        june = next(r for r in self.month_rows(series.id) if r.occurrence_month == date(2027, 6, 1))
+        incomes_router.update_income(june.id, happened_on=date(2027, 6, 5), person_id=self.husband.id, kind="salario",
+                                     amount="7600,00", description="", scope="proximos", end_mode="manter",
+                                     until="", db=self.db)
+        rows = self.month_rows(series.id)
+        self.assertTrue(all(r.amount_cents == 720000 for r in rows if r.occurrence_month < date(2027, 6, 1)))
+        self.assertTrue(all(r.amount_cents == 760000 for r in rows if r.occurrence_month >= date(2027, 6, 1)))
+        self.db.refresh(series)
+        self.assertEqual(series.amount_cents, 760000)
+        # Meses novos gerados depois já saem com o valor reajustado.
+        ensure_recurring_incomes(self.db, date(2027, 1, 10))
+        self.assertEqual(self.month_rows(series.id)[-1].amount_cents, 760000)
+
+    def test_edit_only_this_month_keeps_series_and_survives_regeneration(self):
+        self.create_series()
+        series = self.db.scalar(select(RecurringIncome))
+        january = next(r for r in self.month_rows(series.id) if r.occurrence_month == date(2027, 1, 1))
+        incomes_router.update_income(january.id, happened_on=date(2027, 1, 8), person_id=self.husband.id, kind="salario",
+                                     amount="7500,00", description="bônus", scope="este", end_mode="manter",
+                                     until="", db=self.db)
+        ensure_recurring_incomes(self.db, FIXED_TODAY)
+        self.db.refresh(january)
+        self.assertEqual((january.amount_cents, january.happened_on), (750000, date(2027, 1, 8)))
+        others = [r for r in self.month_rows(series.id) if r.id != january.id]
+        self.assertTrue(all(r.amount_cents == 720000 for r in others))
+
+    def test_edit_next_can_shorten_series_and_drops_later_rows(self):
+        self.create_series()
+        series = self.db.scalar(select(RecurringIncome))
+        rows = self.month_rows(series.id)
+        incomes_router.update_income(rows[0].id, happened_on=rows[0].happened_on, person_id=self.husband.id,
+                                     kind="salario", amount="7200,00", description="", scope="proximos",
+                                     end_mode="ate", until="2027-02", db=self.db)
+        self.assertEqual(len(self.month_rows(series.id)), 4)  # nov, dez, jan, fev
+        self.assertEqual(ensure_recurring_incomes(self.db, FIXED_TODAY), 0)
+        incomes_router.update_income(rows[0].id, happened_on=rows[0].happened_on, person_id=self.husband.id,
+                                     kind="salario", amount="7200,00", description="", scope="proximos",
+                                     end_mode="sem_fim", until="", db=self.db)
+        self.assertEqual(len(self.month_rows(series.id)), 12)
+
+    def test_edit_changing_kind_to_deduction_changes_cashflow_flag(self):
+        self.create_series(kind="extra", amount="100,00", until="2026-12")
+        series = self.db.scalar(select(RecurringIncome))
+        first = self.month_rows(series.id)[0]
+        incomes_router.update_income(first.id, happened_on=first.happened_on, person_id=self.husband.id, kind="inss",
+                                     amount="100,00", description="", scope="proximos", end_mode="manter", until="",
+                                     db=self.db)
+        self.assertTrue(all(not r.included_in_cashflow for r in self.month_rows(series.id)))
+
+    def test_delete_this_and_next_ends_series_and_is_not_regenerated(self):
+        self.create_series(repeat="sem_fim", until="")
+        series = self.db.scalar(select(RecurringIncome))
+        march = next(r for r in self.month_rows(series.id) if r.occurrence_month == date(2027, 3, 1))
+        incomes_router.delete_income(march.id, scope="proximos", db=self.db)
+        self.db.refresh(series)
+        self.assertEqual(series.end_month, date(2027, 2, 1))
+        self.assertEqual(len(self.month_rows(series.id)), 4)
+        self.assertEqual(ensure_recurring_incomes(self.db, date(2028, 1, 1)), 0)
+
+    def test_delete_from_first_month_deactivates_series(self):
+        self.create_series()
+        series = self.db.scalar(select(RecurringIncome))
+        first = self.month_rows(series.id)[0]
+        incomes_router.delete_income(first.id, scope="proximos", db=self.db)
+        self.db.refresh(series)
+        self.assertFalse(series.active)
+        self.assertEqual(self.month_rows(series.id), [])
+
+    def test_delete_whole_series(self):
+        self.create_series()
+        series = self.db.scalar(select(RecurringIncome))
+        some = self.month_rows(series.id)[3]
+        incomes_router.delete_income(some.id, scope="serie", db=self.db)
+        self.assertIsNone(self.db.scalar(select(RecurringIncome.id)))
+        self.assertIsNone(self.db.scalar(select(Income.id)))
+
+    def test_single_income_keeps_working_without_recurrence(self):
+        response = self.create_series(repeat="nao", until="")
+        self.assertNotIn("erro=", response.headers["location"])
+        income = self.db.scalar(select(Income))
+        self.assertIsNone(income.recurring_income_id)
+        incomes_router.delete_income(income.id, scope="este", db=self.db)
+        self.assertIsNone(self.db.scalar(select(Income.id)))
+
+    def test_pages_render_recurrence_controls(self):
+        self.create_series()
+        html = incomes_router.incomes_page(fake_request(), "2026-12", self.db).body.decode()
+        self.assertIn('name="repeat"', html)
+        self.assertIn("Repete todo mês até 05/2027", html)
+        self.assertIn('name="scope"', html)
+        income = self.db.scalar(select(Income))
+        edit = incomes_router.edit_income_form(income.id, fake_request(), self.db).body.decode()
+        self.assertIn("Este e os próximos meses", edit)
+
+
+class CardEditingTests(BaseCase):
+    def make_card(self, kind="credito", closing=10, due=17, limit=500000):
+        card = CreditCard(name="Visa", owner_id=self.husband.id, kind=kind, closing_day=closing if kind == "credito" else 0,
+                          due_day=due if kind == "credito" else 0, limit_cents=limit)
+        self.db.add(card)
+        self.db.commit()
+        return card
+
+    def buy(self, card, when, amount="300,00", installments=1, status="realizado"):
+        create_transaction(None, description="Compra", amount=amount, purchase_date=when, category_id=self.category.id,
+                           person_id=self.husband.id, account_id="", card_id=str(card.id), status=status,
+                           installments=installments, db=self.db)
+
+    def cashflows(self, card):
+        rows = self.db.scalars(select(FinancialTransaction).where(FinancialTransaction.card_id == card.id)
+                               .order_by(FinancialTransaction.id)).all()
+        return [r.cashflow_date for r in rows]
+
+    def test_changing_due_day_recalculates_every_purchase_including_past_and_installments(self):
+        card = self.make_card()
+        self.buy(card, date(2026, 10, 20))                       # fecha dia 10: vence 17/11
+        self.buy(card, date(2026, 3, 5))                         # compra antiga, já realizada
+        self.buy(card, date(2026, 10, 20), "900,00", 3)          # parcelas 17/11, 17/12, 17/01
+        self.assertEqual(self.cashflows(card), [date(2026, 11, 17), date(2026, 3, 17), date(2026, 11, 17),
+                                                date(2026, 12, 17), date(2027, 1, 17)])
+        response = update_card(card.id, last_four_digits="", limit="8.000,00", closing_day=10, due_day=20, db=self.db)
+        self.assertEqual(response.headers["location"], "/cadastros?ok=1")
+        self.db.refresh(card)
+        self.assertEqual((card.closing_day, card.due_day, card.limit_cents), (10, 20, 800000))
+        self.assertEqual(self.cashflows(card), [date(2026, 11, 20), date(2026, 3, 20), date(2026, 11, 20),
+                                                date(2026, 12, 20), date(2027, 1, 20)])
+
+    def test_changing_closing_day_moves_purchase_to_other_invoice(self):
+        card = self.make_card()
+        self.buy(card, date(2026, 10, 12))
+        # Fecha dia 10: a compra de 12/10 entra na fatura de novembro, que vence em 17/11.
+        self.assertEqual(self.cashflows(card), [date(2026, 11, 17)])
+        update_card(card.id, last_four_digits="", limit="5000,00", closing_day=15, due_day=17, db=self.db)
+        # Fecha dia 15: a mesma compra passa para a fatura de outubro, que vence em 17/10.
+        self.assertEqual(self.cashflows(card), [date(2026, 10, 17)])
+        update_card(card.id, last_four_digits="", limit="5000,00", closing_day=5, due_day=17, db=self.db)
+        self.assertEqual(self.cashflows(card), [date(2026, 11, 17)])
+
+    def test_unchanged_cycle_does_not_touch_existing_dates(self):
+        card = self.make_card()
+        self.buy(card, date(2026, 10, 20))
+        row = self.db.scalar(select(FinancialTransaction))
+        row.cashflow_date = date(2026, 11, 30)  # ajuste manual que não deve ser sobrescrito
+        self.db.commit()
+        update_card(card.id, last_four_digits="1234", limit="9000,00", closing_day=10, due_day=17, db=self.db)
+        self.db.refresh(row)
+        self.assertEqual(row.cashflow_date, date(2026, 11, 30))
+        self.db.refresh(card)
+        self.assertEqual((card.last_four_digits, card.limit_cents), ("1234", 900000))
+
+    def test_invalid_days_and_limit_are_rejected_without_changes(self):
+        card = self.make_card()
+        self.buy(card, date(2026, 10, 20))
+        for kwargs in ({"closing_day": 32, "due_day": 17, "limit": "100,00"},
+                       {"closing_day": 0, "due_day": 17, "limit": "100,00"},
+                       {"closing_day": 10, "due_day": 17, "limit": "abc"},
+                       {"closing_day": 10, "due_day": 17, "limit": "-5,00"}):
+            response = update_card(card.id, last_four_digits="", db=self.db, **kwargs)
+            self.assertIn("erro=", response.headers["location"], kwargs)
+        self.db.refresh(card)
+        self.assertEqual((card.closing_day, card.due_day, card.limit_cents), (10, 17, 500000))
+        self.assertEqual(self.cashflows(card), [date(2026, 11, 17)])
+
+    def test_debit_and_meal_voucher_only_edit_limit(self):
+        for kind in ("debito", "vale_alimentacao"):
+            card = self.make_card(kind=kind, limit=0)
+            update_card(card.id, last_four_digits="4321", limit="1.500,00", closing_day=12, due_day=25, db=self.db)
+            self.db.refresh(card)
+            self.assertEqual((card.closing_day, card.due_day, card.limit_cents, card.last_four_digits),
+                             (0, 0, 150000, "4321"))
+
+    def test_recalculate_service_ignores_non_credit_cards(self):
+        card = self.make_card(kind="debito")
+        self.assertEqual(recalculate_card_cashflow(self.db, card), 0)
+
+    def test_registration_page_shows_cycle_fields_only_for_credit_cards(self):
+        credit = self.make_card()
+        debit = self.make_card(kind="debito")
+        html = registrations(fake_request(), self.db).body.decode()
+        self.assertIn(f'action="/cadastros/cartoes/{credit.id}/editar"', html)
+        credit_form = html.split(f'action="/cadastros/cartoes/{credit.id}/editar"')[1].split("</form>")[0]
+        debit_form = html.split(f'action="/cadastros/cartoes/{debit.id}/editar"')[1].split("</form>")[0]
+        self.assertIn('name="closing_day"', credit_form)
+        self.assertIn('name="due_day"', credit_form)
+        self.assertIn('value="5000,00"', credit_form)
+        self.assertNotIn('name="closing_day"', debit_form)
+        self.assertIn('name="limit"', debit_form)
+
+    def test_invoice_due_date_still_follows_new_cycle(self):
+        card = self.make_card()
+        update_card(card.id, last_four_digits="", limit="5000,00", closing_day=10, due_day=20, db=self.db)
+        self.db.refresh(card)
+        self.assertEqual(invoice_due_date(card, date(2026, 10, 20)), date(2026, 11, 20))
+
+
+class MigrationTests(unittest.TestCase):
+    def test_old_incomes_table_gets_recurrence_columns_and_keeps_rows(self):
+        path = os.path.join(tempfile.mkdtemp(prefix="migracao-"), "antigo.db")
+        engine = create_engine(f"sqlite:///{path}", future=True)
+        with engine.begin() as connection:
+            connection.execute(text("CREATE TABLE people (id INTEGER PRIMARY KEY, name VARCHAR(80) NOT NULL UNIQUE, active BOOLEAN NOT NULL DEFAULT 1)"))
+            connection.execute(text("""CREATE TABLE incomes (
+                id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL REFERENCES people(id), kind VARCHAR(30) NOT NULL,
+                happened_on DATE NOT NULL, amount_cents INTEGER NOT NULL, description VARCHAR(240) NOT NULL DEFAULT '',
+                included_in_cashflow BOOLEAN NOT NULL DEFAULT 1)"""))
+            connection.execute(text("INSERT INTO people (id, name) VALUES (1, 'Marido')"))
+            connection.execute(text("INSERT INTO incomes (person_id, kind, happened_on, amount_cents) VALUES (1, 'salario', '2026-10-05', 720000)"))
+        with patch.object(database, "engine", engine), patch.object(database, "DATABASE_URL", f"sqlite:///{path}"):
+            database.migrate_database()
+            database.migrate_database()  # idempotente
+        inspector = inspect(engine)
+        columns = {c["name"] for c in inspector.get_columns("incomes")}
+        self.assertTrue({"recurring_income_id", "occurrence_month"} <= columns)
+        self.assertIn("recurring_incomes", inspector.get_table_names())
+        self.assertIn("uq_income_recurring_occurrence", {i["name"] for i in inspector.get_indexes("incomes")})
+        with Session(engine) as session:
+            row = session.scalar(select(Income))
+            self.assertEqual((row.amount_cents, row.recurring_income_id, row.occurrence_month), (720000, None, None))
+            # Várias linhas antigas (NULL, NULL) não conflitam com o índice único.
+            session.add(Income(person_id=1, kind="extra", happened_on=date(2026, 10, 6), amount_cents=100))
+            session.commit()
+        engine.dispose()
 
 
 if __name__ == "__main__":

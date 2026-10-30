@@ -47,6 +47,15 @@ def migrate_database() -> None:
                 connection.execute(text("ALTER TABLE credit_cards ADD COLUMN kind VARCHAR(30) NOT NULL DEFAULT 'credito'"))
             if "last_four_digits" not in columns:
                 connection.execute(text("ALTER TABLE credit_cards ADD COLUMN last_four_digits VARCHAR(4) NOT NULL DEFAULT ''"))
+    # Receitas recorrentes: colunas nulas, então linhas antigas continuam avulsas.
+    if "incomes" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("incomes")}
+        with engine.begin() as connection:
+            if "recurring_income_id" not in columns:
+                connection.execute(text("ALTER TABLE incomes ADD COLUMN recurring_income_id INTEGER REFERENCES recurring_incomes(id) ON DELETE SET NULL"))
+            if "occurrence_month" not in columns:
+                connection.execute(text("ALTER TABLE incomes ADD COLUMN occurrence_month DATE"))
+            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_income_recurring_occurrence ON incomes (recurring_income_id, occurrence_month)"))
     # Permite invalidar sessões antigas ao trocar a senha.
     if "users" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("users")}

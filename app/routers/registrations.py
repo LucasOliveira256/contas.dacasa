@@ -8,7 +8,7 @@ from ..models import (
     Person, Category, Account, CreditCard, Income, FixedExpense,
     FinancialTransaction, Budget, SavingsAccount,
 )
-from ..services.finance import parse_brl_to_cents
+from ..services.finance import parse_brl_to_cents, recalculate_card_cashflow
 from .common import page
 
 router = APIRouter(prefix="/cadastros", tags=["cadastros"])
@@ -167,13 +167,32 @@ def create_card(
 
 
 @router.post("/cartoes/{card_id}/editar")
-def update_card(card_id: int, last_four_digits: str = Form(""), db: Session = Depends(get_db)):
+def update_card(card_id: int, last_four_digits: str = Form(""), limit: str | None = Form(None),
+                closing_day: int | None = Form(None), due_day: int | None = Form(None), db: Session = Depends(get_db)):
     card = db.get(CreditCard, card_id)
     digits = last_four_digits.strip()
     if not card:
         return RedirectResponse("/cadastros?erro=Cartao+nao+encontrado", status_code=303)
     if digits and (len(digits) != 4 or not digits.isascii() or not digits.isdigit()):
         return RedirectResponse("/cadastros?erro=Informe+zero+ou+quatro+digitos", status_code=303)
-    card.last_four_digits = digits
-    db.commit()
+    try:
+        new_limit = parse_brl_to_cents(limit) if limit is not None else card.limit_cents
+        cycle_changed = False
+        if card.kind == "credito":
+            new_closing = closing_day if closing_day is not None else card.closing_day
+            new_due = due_day if due_day is not None else card.due_day
+            if not 1 <= new_closing <= 31 or not 1 <= new_due <= 31:
+                raise ValueError("Informe dias de fechamento e vencimento entre 1 e 31.")
+            cycle_changed = (new_closing, new_due) != (card.closing_day, card.due_day)
+            card.closing_day, card.due_day = new_closing, new_due
+        # Débito e Vale Alimentação não têm ciclo de fatura: fechamento e vencimento continuam 0.
+        card.last_four_digits = digits
+        card.limit_cents = new_limit
+        if cycle_changed:
+            # cashflow_date é gravado na compra; sem o recálculo, faturas antigas manteriam as datas do cadastro errado.
+            recalculate_card_cashflow(db, card)
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/cadastros?erro={str(exc).replace(' ', '+')}", status_code=303)
     return RedirectResponse("/cadastros?ok=1", status_code=303)
